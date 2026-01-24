@@ -39,10 +39,13 @@ func (g *PlantUMLGenerator) Generate(components []analyzer.AnalyzedComponent, w 
 		return fmt.Errorf("writing title: %w", err)
 	}
 
-	// Write components
-	for _, comp := range components {
-		if err := g.writeComponent(comp, w); err != nil {
-			return fmt.Errorf("writing component %s: %w", comp.Component.Name, err)
+	// Group components by package
+	packageMap := g.groupByPackage(components)
+
+	// Write components grouped by package
+	for pkgName, pkgComponents := range packageMap {
+		if err := g.writePackageBoundary(pkgName, pkgComponents, w); err != nil {
+			return fmt.Errorf("writing package %s: %w", pkgName, err)
 		}
 	}
 
@@ -125,6 +128,48 @@ func (g *PlantUMLGenerator) writeRelationships(comp analyzer.AnalyzedComponent, 
 		if err != nil {
 			return fmt.Errorf("writing relationship to %s: %w", dep.TargetName, err)
 		}
+	}
+
+	return nil
+}
+
+// groupByPackage organizes components by their package name
+func (g *PlantUMLGenerator) groupByPackage(components []analyzer.AnalyzedComponent) map[string][]analyzer.AnalyzedComponent {
+	pkgMap := make(map[string][]analyzer.AnalyzedComponent)
+
+	for _, comp := range components {
+		pkgName := comp.Component.PackageName
+		if pkgName == "" {
+			pkgName = "main"
+		}
+		pkgMap[pkgName] = append(pkgMap[pkgName], comp)
+	}
+
+	return pkgMap
+}
+
+// writePackageBoundary writes a Container_Boundary grouping for a package
+func (g *PlantUMLGenerator) writePackageBoundary(pkgName string, components []analyzer.AnalyzedComponent, w io.Writer) error {
+	boundaryID := sanitizeID(pkgName + "_boundary")
+
+	// Open boundary
+	if _, err := fmt.Fprintf(w, "Container_Boundary(%s, \"%s\") {\n", boundaryID, pkgName); err != nil {
+		return fmt.Errorf("writing boundary start: %w", err)
+	}
+
+	// Write components within this package
+	for _, comp := range components {
+		if err := g.writeComponent(comp, w); err != nil {
+			return fmt.Errorf("writing component %s: %w", comp.Component.Name, err)
+		}
+	}
+
+	// Close boundary
+	if _, err := fmt.Fprintln(w, "}"); err != nil {
+		return fmt.Errorf("writing boundary end: %w", err)
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
 	}
 
 	return nil
