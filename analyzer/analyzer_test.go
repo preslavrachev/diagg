@@ -147,3 +147,61 @@ func TestAnalyze_InterfaceImplementation(t *testing.T) {
 		t.Error("C should be detected as implementing Storage interface")
 	}
 }
+
+// TestAnalyze_MethodParameterDependencies verifies that the analyzer detects dependencies
+// from method parameters and return types, not just struct fields.
+// Example: If Generator has method Generate([]AnalyzedComponent), it depends on AnalyzedComponent.
+func TestAnalyze_MethodParameterDependencies(t *testing.T) {
+	const (
+		genName      = "PlantUMLGenerator"
+		analyzedName = "AnalyzedComponent"
+	)
+
+	p := parser.NewParser()
+	projectRoot, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatalf("failed to get project root: %v", err)
+	}
+
+	components, pkgTypeInfo, err := p.ParseDirectoryWithTypes(projectRoot)
+	if err != nil {
+		t.Fatalf("ParseDirectoryWithTypes() failed: %v", err)
+	}
+
+	analyzer := NewAnalyzer()
+	analyzed := analyzer.AnalyzeWithTypes(components, pkgTypeInfo)
+
+	// Build lookup map
+	compMap := make(map[string]*AnalyzedComponent)
+	for i := range analyzed {
+		compMap[analyzed[i].Component.Name] = &analyzed[i]
+	}
+
+	// PlantUMLGenerator should exist
+	gen := compMap[genName]
+	if gen == nil {
+		t.Fatalf("%s not found in analyzed components", genName)
+	}
+
+	// Debug: check if methods were parsed
+	t.Logf("PlantUMLGenerator has %d methods", len(gen.Component.Methods))
+	for _, method := range gen.Component.Methods {
+		t.Logf("  Method: %s(params: %v) returns: %v", method.Name, method.Parameters, method.Returns)
+	}
+
+	// PlantUMLGenerator.Generate() takes []AnalyzedComponent as parameter
+	// So it should have a dependency on AnalyzedComponent
+	var foundDep bool
+	for _, dep := range gen.Dependencies {
+		if dep.TargetName == analyzedName {
+			foundDep = true
+			t.Logf("✓ %s depends on %s (via method parameter)", genName, analyzedName)
+			break
+		}
+	}
+
+	if !foundDep {
+		t.Errorf("%s should have dependency on %s (method parameter), but none found.\nActual dependencies: %v",
+			genName, analyzedName, gen.Dependencies)
+	}
+}

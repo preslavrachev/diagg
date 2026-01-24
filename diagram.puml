@@ -3,6 +3,10 @@
 
 title Component Diagram - diagg
 
+Container_Boundary(generator_boundary, "generator") {
+Component(PlantUMLGenerator, "PlantUMLGenerator", "Go", "generator component")
+}
+
 Container_Boundary(parser_boundary, "parser") {
 Component(Component, "Component", "Go", "parser component")
 Component(Field, "Field", "Go", "parser component")
@@ -20,17 +24,19 @@ Component(InterfaceImplementation, "InterfaceImplementation", "Go", "analyzer co
 Component(Analyzer, "Analyzer", "Go", "analyzer component")
 }
 
-Container_Boundary(generator_boundary, "generator") {
-Component(PlantUMLGenerator, "PlantUMLGenerator", "Go", "generator component")
-}
-
 
 Rel(Component, Field, "uses")
 Rel(Component, Method, "uses")
+Rel(Parser, Component, "uses")
+Rel(Parser, PackageTypeInfo, "uses")
 Rel(AnalyzedComponent, Component, "uses")
 Rel(AnalyzedComponent, ComponentType, "uses")
 Rel(AnalyzedComponent, Dependency, "uses")
 Rel(AnalyzedComponent, InterfaceImplementation, "uses")
 Rel(Dependency, ComponentType, "uses")
+Rel(Analyzer, Component, "uses")
+Rel(Analyzer, AnalyzedComponent, "uses")
+Rel(Analyzer, PackageTypeInfo, "uses")
+Rel(PlantUMLGenerator, AnalyzedComponent, "uses")
 
 @enduml

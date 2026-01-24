@@ -254,6 +254,7 @@ func (a *Analyzer) AnalyzeWithTypes(
 }
 
 // extractDependenciesWithTypes extracts dependencies using type information
+// AIDEV-NOTE: method-deps; extracts dependencies from struct fields, method parameters, and return types
 func (a *Analyzer) extractDependenciesWithTypes(
 	comp parser.Component,
 	componentMap map[string]*AnalyzedComponent,
@@ -262,30 +263,50 @@ func (a *Analyzer) extractDependenciesWithTypes(
 	var deps []Dependency
 	seen := make(map[string]bool)
 
-	for _, field := range comp.Fields {
-		// Extract the base type name (remove package prefix)
-		typeName := field.TypeName
-		if idx := strings.LastIndex(typeName, "."); idx >= 0 {
-			typeName = typeName[idx+1:]
+	// Helper to add a dependency if it references a known component
+	addDep := func(typeName string) {
+		// Extract the base type name (remove package prefix, pointers, slices)
+		baseName := typeName
+		baseName = strings.TrimPrefix(baseName, "*")
+		baseName = strings.TrimPrefix(baseName, "[]")
+		if idx := strings.LastIndex(baseName, "."); idx >= 0 {
+			baseName = baseName[idx+1:]
 		}
 
-		// Check if this field references another component
-		if target, exists := componentMap[typeName]; exists {
-			if !seen[typeName] {
+		// Check if this references another component
+		if target, exists := componentMap[baseName]; exists {
+			if !seen[baseName] {
 				// Determine if it's an interface dependency
 				isInterface := false
-				if fieldType, ok := typeMap[typeName]; ok {
+				if fieldType, ok := typeMap[baseName]; ok {
 					_, isInterface = fieldType.Underlying().(*types.Interface)
 				}
 
 				dep := Dependency{
-					TargetName:  typeName,
+					TargetName:  baseName,
 					TargetType:  target.Type,
 					IsInterface: isInterface || target.IsInterface,
 				}
 				deps = append(deps, dep)
-				seen[typeName] = true
+				seen[baseName] = true
 			}
+		}
+	}
+
+	// Extract dependencies from struct fields
+	for _, field := range comp.Fields {
+		addDep(field.TypeName)
+	}
+
+	// Extract dependencies from method signatures
+	for _, method := range comp.Methods {
+		// Check method parameters
+		for _, param := range method.Parameters {
+			addDep(param)
+		}
+		// Check return types
+		for _, ret := range method.Returns {
+			addDep(ret)
 		}
 	}
 

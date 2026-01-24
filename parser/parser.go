@@ -314,6 +314,8 @@ func (p *Parser) extractComponentsFromAST(file *ast.File, pkg *packages.Package)
 			case *ast.StructType:
 				component.Kind = "struct"
 				component.Fields = p.extractFieldsWithTypeInfo(t, pkg)
+				// AIDEV-NOTE: method-extraction; extract methods for this type from the package
+				component.Methods = p.extractMethodsForType(typeSpec.Name.Name, pkg)
 			case *ast.InterfaceType:
 				component.Kind = "interface"
 				// Extract interface methods if needed
@@ -376,4 +378,97 @@ func (p *Parser) extractFieldsWithTypeInfo(structType *ast.StructType, pkg *pack
 	}
 
 	return fields
+}
+
+// extractMethodsForType extracts methods defined on a named type
+// AIDEV-NOTE: method-extraction; scans all function declarations for methods with receiver matching typeName
+func (p *Parser) extractMethodsForType(typeName string, pkg *packages.Package) []Method {
+	var methods []Method
+
+	for _, syntax := range pkg.Syntax {
+		ast.Inspect(syntax, func(n ast.Node) bool {
+			funcDecl, ok := n.(*ast.FuncDecl)
+			if !ok || funcDecl.Recv == nil {
+				return true
+			}
+
+			// Check if this method belongs to our type
+			for _, recv := range funcDecl.Recv.List {
+				recvTypeName := p.extractReceiverTypeName(recv.Type)
+				if recvTypeName == typeName && ast.IsExported(funcDecl.Name.Name) {
+					method := Method{
+						Name:       funcDecl.Name.Name,
+						Parameters: p.extractFunctionParams(funcDecl.Type.Params),
+						Returns:    p.extractFunctionResults(funcDecl.Type.Results),
+					}
+					methods = append(methods, method)
+				}
+			}
+			return true
+		})
+	}
+
+	return methods
+}
+
+// extractReceiverTypeName extracts type name from receiver (handles *T and T)
+func (p *Parser) extractReceiverTypeName(expr ast.Expr) string {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.StarExpr:
+		if ident, ok := t.X.(*ast.Ident); ok {
+			return ident.Name
+		}
+	}
+	return ""
+}
+
+// extractFunctionParams extracts parameter types from function signature
+func (p *Parser) extractFunctionParams(fieldList *ast.FieldList) []string {
+	if fieldList == nil {
+		return nil
+	}
+
+	var params []string
+	for _, param := range fieldList.List {
+		typeName := p.formatType(param.Type)
+		params = append(params, typeName)
+	}
+	return params
+}
+
+// extractFunctionResults extracts return types from function signature
+func (p *Parser) extractFunctionResults(fieldList *ast.FieldList) []string {
+	if fieldList == nil {
+		return nil
+	}
+
+	var results []string
+	for _, result := range fieldList.List {
+		typeName := p.formatType(result.Type)
+		results = append(results, typeName)
+	}
+	return results
+}
+
+// formatType converts ast.Expr to string representation of type
+func (p *Parser) formatType(expr ast.Expr) string {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.StarExpr:
+		return "*" + p.formatType(t.X)
+	case *ast.ArrayType:
+		return "[]" + p.formatType(t.Elt)
+	case *ast.SelectorExpr:
+		if ident, ok := t.X.(*ast.Ident); ok {
+			return ident.Name + "." + t.Sel.Name
+		}
+	case *ast.InterfaceType:
+		return "interface{}"
+	case *ast.MapType:
+		return "map[" + p.formatType(t.Key) + "]" + p.formatType(t.Value)
+	}
+	return "unknown"
 }

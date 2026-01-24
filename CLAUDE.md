@@ -9,7 +9,7 @@ By pointing this CLI at a Go project, it recursively parses Go source files, ext
 The tool follows a three-stage pipeline:
 
 1. **Parser** (`parser/`) - Uses `golang.org/x/tools/go/packages` to load Go packages with full type information, extracting structs, interfaces, and their relationships
-2. **Analyzer** (`analyzer/`) - Classifies components based on naming patterns (e.g., `*Service`, `*Repository`, `*Handler`), identifies dependencies from struct fields, and detects interface implementations
+2. **Analyzer** (`analyzer/`) - Classifies components based on naming patterns (e.g., `*Service`, `*Repository`, `*Handler`), identifies dependencies from struct fields and method signatures (parameters and return types), and detects interface implementations
 3. **Generator** (`generator/`) - Renders PlantUML C4 component diagrams with proper relationships (solid lines for dependencies, dotted lines for interface implementations)
 
 ## Package Structure
@@ -57,9 +57,23 @@ Unlike go-structurizr (which requires extensive configuration and manual wiring)
 - Full type-aware analysis using `go/packages` for accurate interface detection
 - Simple, opinionated defaults that produce useful diagrams immediately
 
+## Dependency Detection
+
+The analyzer detects dependencies from multiple sources:
+- **Struct fields** - Direct composition/aggregation relationships
+- **Method parameters** - Dependencies passed into behavior
+- **Method return types** - Dependencies produced by behavior
+
+This ensures that components like `PlantUMLGenerator` correctly show dependencies on `AnalyzedComponent` (via method parameters) even when they don't store them as fields.
+
 ## Development Notes
 
-- AIDEV anchors are used throughout the codebase for AI-assisted development - grep for `AIDEV-NOTE:`, `AIDEV-TODO:`, or `AIDEV-QUESTION:`
-- Tests use table-driven patterns with well-named constants
-- Error handling uses `fmt.Errorf("context: %w", err)` for proper error chains
-- Example output: [diagram.puml](diagram.puml) shows the tool's own component structure
+- **AIDEV anchors** - Used throughout for AI-assisted development. Grep for `AIDEV-NOTE:`, `AIDEV-TODO:`, or `AIDEV-QUESTION:`
+  - Key anchors: `method-deps`, `method-extraction`, `test-cross-pkg-deps`
+- **Testing strategy** - TDD approach with comprehensive test coverage:
+  - Cross-package dependency detection ([analyzer_test.go:14](analyzer/analyzer_test.go#L14))
+  - Interface implementation detection ([analyzer_test.go:70](analyzer/analyzer_test.go#L70))
+  - Method parameter dependency detection ([analyzer_test.go:154](analyzer/analyzer_test.go#L154))
+- **Tests use table-driven patterns** with well-named constants
+- **Error handling** uses `fmt.Errorf("context: %w", err)` for proper error chains
+- **Example output**: [diagram.puml](diagram.puml) shows the tool's own component structure
