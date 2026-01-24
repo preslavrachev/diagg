@@ -111,22 +111,34 @@ func (g *PlantUMLGenerator) generateDescription(comp analyzer.AnalyzedComponent)
 
 // writeRelationships writes the relationships (dependencies) for a component
 func (g *PlantUMLGenerator) writeRelationships(comp analyzer.AnalyzedComponent, w io.Writer) error {
-	if len(comp.Dependencies) == 0 {
-		return nil
-	}
-
 	sourceID := sanitizeID(comp.Component.Name)
 
+	// Write dependency relationships
 	for _, dep := range comp.Dependencies {
 		targetID := sanitizeID(dep.TargetName)
 
-		// Format: Rel(from, to, label)
+		// Use solid line for regular dependencies
 		_, err := fmt.Fprintf(w, "Rel(%s, %s, \"uses\")\n",
 			sourceID,
 			targetID,
 		)
 		if err != nil {
 			return fmt.Errorf("writing relationship to %s: %w", dep.TargetName, err)
+		}
+	}
+
+	// Write interface implementation relationships (dotted lines)
+	for _, impl := range comp.Implements {
+		targetID := sanitizeID(impl.InterfaceName)
+
+		// Use Rel_Back for dotted lines (C4-PlantUML convention)
+		// Rel_Back renders as a dotted/dashed line going backwards
+		_, err := fmt.Fprintf(w, "Rel_Back(%s, %s, \"implements\")\n",
+			targetID,
+			sourceID,
+		)
+		if err != nil {
+			return fmt.Errorf("writing interface implementation to %s: %w", impl.InterfaceName, err)
 		}
 	}
 

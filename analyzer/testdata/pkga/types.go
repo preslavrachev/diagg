@@ -1,6 +1,6 @@
 package pkga
 
-import "something/pkgb"
+import "testdata/pkgb"
 
 type A struct {
 	Dep *pkgb.B

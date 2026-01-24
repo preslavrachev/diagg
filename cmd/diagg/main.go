@@ -62,9 +62,9 @@ func runDiagg(c *cli.Context) error {
 
 	fmt.Printf("Analyzing Go code in: %s\n", absPath)
 
-	// Step 1: Parse Go files
+	// Step 1: Parse Go files with type information for interface detection
 	p := parser.NewParser()
-	components, err := p.ParseDirectory(absPath)
+	components, pkgTypeInfo, err := p.ParseDirectoryWithTypes(absPath)
 	if err != nil {
 		return fmt.Errorf("parsing directory: %w", err)
 	}
@@ -75,9 +75,9 @@ func runDiagg(c *cli.Context) error {
 
 	fmt.Printf("Found %d components\n", len(components))
 
-	// Step 2: Analyze components
+	// Step 2: Analyze components with type information (enables interface detection)
 	a := analyzer.NewAnalyzer()
-	analyzed := a.Analyze(components)
+	analyzed := a.AnalyzeWithTypes(components, pkgTypeInfo)
 
 	// Count by type
 	typeCounts := make(map[analyzer.ComponentType]int)

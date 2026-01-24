@@ -67,16 +67,8 @@ func TestAnalyze_CrossPackageDependencies(t *testing.T) {
 // when a concrete type implements an interface defined in another package.
 // Expected: B depends on Storage (interface), C implements Storage.
 // In C4: B ──uses──▶ Storage (dotted line to C showing "implements Storage")
-//
-// TODO: Implement interface detection using go/packages
-// See INTERFACE_DETECTION.md for implementation plan
 func TestAnalyze_InterfaceImplementation(t *testing.T) {
-	t.Skip("Requires go/types integration - not yet implemented")
-
-	/*
-	// Commented out until data structures are extended
-
-	// This test defines the desired behavior:
+	// This test uses go/packages for full type information
 	// 1. pkgb.B has field of type Storage (interface)
 	// 2. pkgc.C implements Storage interface (implicitly)
 	// 3. Analyzer should detect:
@@ -92,19 +84,26 @@ func TestAnalyze_InterfaceImplementation(t *testing.T) {
 		t.Fatalf("failed to get absolute path: %v", err)
 	}
 
-	components, err := p.ParseDirectory(testdataPath)
+	components, pkgTypeInfo, err := p.ParseDirectoryWithTypes(testdataPath)
 	if err != nil {
-		t.Fatalf("ParseDirectory() failed: %v", err)
+		t.Fatalf("ParseDirectoryWithTypes() failed: %v", err)
 	}
 
+	if pkgTypeInfo == nil || pkgTypeInfo.TypeInfo == nil {
+		t.Fatal("type info is nil")
+	}
+
+	// Analyze with type information
 	analyzer := NewAnalyzer()
-	analyzed := analyzer.Analyze(components)
+	analyzed := analyzer.AnalyzeWithTypes(components, pkgTypeInfo)
 
 	// Build lookup map
 	compMap := make(map[string]*AnalyzedComponent)
 	for i := range analyzed {
 		compMap[analyzed[i].Component.Name] = &analyzed[i]
 	}
+
+	t.Logf("Found %d components with type information", len(analyzed))
 
 	// Verify B has dependency on Storage interface
 	compB := compMap["B"]
@@ -123,7 +122,7 @@ func TestAnalyze_InterfaceImplementation(t *testing.T) {
 	if storageDep == nil {
 		t.Error("B should have dependency on Storage interface")
 	} else {
-		// Verify it's marked as an interface dependency
+		t.Logf("✓ B depends on Storage interface")
 		if !storageDep.IsInterface {
 			t.Error("Storage dependency should be marked as interface")
 		}
@@ -139,6 +138,7 @@ func TestAnalyze_InterfaceImplementation(t *testing.T) {
 	for _, impl := range compC.Implements {
 		if impl.InterfaceName == "Storage" {
 			implementsStorage = true
+			t.Logf("✓ C implements Storage interface")
 			break
 		}
 	}
@@ -146,5 +146,4 @@ func TestAnalyze_InterfaceImplementation(t *testing.T) {
 	if !implementsStorage {
 		t.Error("C should be detected as implementing Storage interface")
 	}
-	*/
 }

@@ -8,18 +8,27 @@ By pointing this CLI at a Go project, it recursively parses Go source files, ext
 
 The tool follows a three-stage pipeline:
 
-1. **Parser** (`parser/`) - Uses `go/ast` to parse `.go` files and extract struct definitions, fields, and type information
-2. **Analyzer** (`analyzer/`) - Classifies components based on naming patterns (e.g., `*Service`, `*Repository`, `*Handler`) and identifies dependencies from struct fields
-3. **Generator** (`generator/`) - Renders PlantUML C4 component diagrams with proper relationships
+1. **Parser** (`parser/`) - Uses `golang.org/x/tools/go/packages` to load Go packages with full type information, extracting structs, interfaces, and their relationships
+2. **Analyzer** (`analyzer/`) - Classifies components based on naming patterns (e.g., `*Service`, `*Repository`, `*Handler`), identifies dependencies from struct fields, and detects interface implementations
+3. **Generator** (`generator/`) - Renders PlantUML C4 component diagrams with proper relationships (solid lines for dependencies, dotted lines for interface implementations)
 
 ## Package Structure
 
 - `cmd/diagg/` - CLI entry point using urfave/cli
-- `parser/` - AST-based Go code parser
-- `analyzer/` - Component type inference and dependency extraction
+- `parser/` - Go package loader with type information support
+- `analyzer/` - Component type inference, dependency extraction, and interface implementation detection
 - `generator/` - PlantUML C4 diagram generator
 
 No `internal/` or `pkg/` directories - packages are reasonably named and organized at the root level.
+
+## Analysis Modes
+
+The analyzer supports two modes:
+
+1. **Basic mode** (`Analyze()`) - Fast AST-only analysis, good for simple dependency graphs
+2. **Type-aware mode** (`AnalyzeWithTypes()`) - Full type information, detects interface implementations and cross-package relationships
+
+Most users should use type-aware mode for accurate diagrams. See [docs/INTERFACE_DETECTION.md](docs/INTERFACE_DETECTION.md) for implementation details.
 
 ## Component Detection Patterns
 
@@ -45,5 +54,12 @@ diagg -o output.puml -t "My App"    # Custom output file and title
 Unlike go-structurizr (which requires extensive configuration and manual wiring), diagg prioritizes:
 - Zero configuration - just point and shoot
 - Automatic inference from naming conventions
-- Static analysis via AST parsing (no need to import/compile the target code)
+- Full type-aware analysis using `go/packages` for accurate interface detection
 - Simple, opinionated defaults that produce useful diagrams immediately
+
+## Development Notes
+
+- AIDEV anchors are used throughout the codebase for AI-assisted development - grep for `AIDEV-NOTE:`, `AIDEV-TODO:`, or `AIDEV-QUESTION:`
+- Tests use table-driven patterns with well-named constants
+- Error handling uses `fmt.Errorf("context: %w", err)` for proper error chains
+- Example output: [diagram.puml](diagram.puml) shows the tool's own component structure

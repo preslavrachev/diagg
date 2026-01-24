@@ -1,0 +1,36 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Component Diagram - diagg
+
+Container_Boundary(parser_boundary, "parser") {
+Component(Component, "Component", "Go", "parser component")
+Component(Field, "Field", "Go", "parser component")
+Component(Method, "Method", "Go", "parser component")
+Component(InterfaceMethod, "InterfaceMethod", "Go", "parser component")
+Component(Parser, "Parser", "Go", "parser component")
+Component(PackageTypeInfo, "PackageTypeInfo", "Go", "parser component")
+}
+
+Container_Boundary(analyzer_boundary, "analyzer") {
+Component(ComponentType, "ComponentType", "Go", "analyzer component")
+Component(AnalyzedComponent, "AnalyzedComponent", "Go", "analyzer component")
+Component(Dependency, "Dependency", "Go", "analyzer component")
+Component(InterfaceImplementation, "InterfaceImplementation", "Go", "analyzer component")
+Component(Analyzer, "Analyzer", "Go", "analyzer component")
+}
+
+Container_Boundary(generator_boundary, "generator") {
+Component(PlantUMLGenerator, "PlantUMLGenerator", "Go", "generator component")
+}
+
+
+Rel(Component, Field, "uses")
+Rel(Component, Method, "uses")
+Rel(AnalyzedComponent, Component, "uses")
+Rel(AnalyzedComponent, ComponentType, "uses")
+Rel(AnalyzedComponent, Dependency, "uses")
+Rel(AnalyzedComponent, InterfaceImplementation, "uses")
+Rel(Dependency, ComponentType, "uses")
+
+@enduml
