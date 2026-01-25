@@ -56,6 +56,12 @@
             stroke-opacity: 0;
         }
 
+        .package-hull {
+            fill-opacity: 0.15;
+            stroke-opacity: 0.4;
+            stroke-width: 2px;
+        }
+
         /* Arrow markers */
         marker {
             fill: #999;
@@ -302,6 +308,44 @@
             simulation.alpha(0.3).restart();
         });
 
+        // AIDEV-NOTE: package-hulls - Draw translucent hulls around package clusters
+        const hullGroup = g.append("g").attr("class", "hulls");
+
+        function updateHulls() {
+            const hulls = packages.map(pkg => {
+                const pkgNodes = visibleNodes.filter(d => d.package === pkg);
+                if (pkgNodes.length < 3) return null; // Need at least 3 points for hull
+
+                const points = pkgNodes.map(d => [d.x, d.y]);
+                const hull = d3.polygonHull(points);
+                if (!hull) return null;
+
+                return { package: pkg, hull: hull };
+            }).filter(d => d !== null);
+
+            hullGroup.selectAll("path")
+                .data(hulls)
+                .join("path")
+                .attr("class", "package-hull")
+                .attr("d", d => {
+                    // Expand hull by padding for visual breathing room
+                    const centroid = d3.polygonCentroid(d.hull);
+                    const expanded = d.hull.map(point => {
+                        const dx = point[0] - centroid[0];
+                        const dy = point[1] - centroid[1];
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        const padding = 25; // pixels of padding
+                        return [
+                            point[0] + (dx / dist) * padding,
+                            point[1] + (dy / dist) * padding
+                        ];
+                    });
+                    return "M" + expanded.join("L") + "Z";
+                })
+                .attr("fill", d => colorScale(d.package))
+                .attr("stroke", d => colorScale(d.package));
+        }
+
         // Draw links with arrows (only visible links, not package anchors)
         const visibleLinks = allLinks.filter(d => d.type !== "package-anchor");
         const link = g.append("g")
@@ -341,6 +385,9 @@ Role: ${d.role}`);
 
         // Update positions on each tick
         simulation.on("tick", () => {
+            // Update hulls first (behind everything)
+            updateHulls();
+
             link.each(function(d) {
                 // Calculate edge endpoints to stop at node boundaries
                 const dx = d.target.x - d.source.x;
