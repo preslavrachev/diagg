@@ -128,8 +128,8 @@ func (g *D3Generator) buildGraph(components []analyzer.AnalyzedComponent) d3Grap
 
 type templateData struct {
 	Title             string
-	GraphJSON         string
-	ColorsJSON        string
+	GraphJSON         template.JS
+	ColorsJSON        template.JS
 	LinkDistance      int
 	ChargeStrength    int
 	CollisionPadding  int
@@ -152,8 +152,8 @@ func (g *D3Generator) writeHTML(graphJSON string, w io.Writer) error {
 
 	data := templateData{
 		Title:             g.title,
-		GraphJSON:         graphJSON,
-		ColorsJSON:        string(colorsJSON),
+		GraphJSON:         template.JS(graphJSON),
+		ColorsJSON:        template.JS(colorsJSON),
 		LinkDistance:      d3cfg.LinkDistance,
 		ChargeStrength:    d3cfg.ChargeStrength,
 		CollisionPadding:  d3cfg.CollisionPadding,

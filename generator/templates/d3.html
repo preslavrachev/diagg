@@ -51,6 +51,11 @@
             stroke-dasharray: 5,5;
         }
 
+        .link.package-anchor {
+            stroke: none;
+            stroke-opacity: 0;
+        }
+
         /* Arrow markers */
         marker {
             fill: #999;
@@ -137,6 +142,11 @@
             <input type="range" id="collisionPadding" min="1" max="20" value="{{.CollisionPadding}}">
             <div class="value" id="collisionPaddingValue">{{.CollisionPadding}}</div>
         </div>
+        <div class="control-group">
+            <label>Package Clustering</label>
+            <input type="range" id="packageClustering" min="0" max="1" step="0.05" value="0.3">
+            <div class="value" id="packageClusteringValue">0.3</div>
+        </div>
     </div>
 
     <div class="legend" id="legend">
@@ -186,6 +196,31 @@
 
         const colorScale = (pkg) => packageColorMap[pkg] || "#999";
 
+        // AIDEV-NOTE: package-clustering - Create invisible anchor nodes for each package
+        // These anchors pull components of the same package together via invisible links
+        const packageAnchors = packages.map(pkg => ({
+            id: `__anchor_${pkg}`,
+            package: pkg,
+            isAnchor: true,
+            size: 0,
+            name: "",
+            type: "",
+            role: ""
+        }));
+
+        // Add anchors to nodes array
+        const allNodes = [...data.nodes, ...packageAnchors];
+
+        // Create invisible links from each component to its package anchor
+        const packageLinks = data.nodes.map(node => ({
+            source: node.id,
+            target: `__anchor_${node.package}`,
+            type: "package-anchor"
+        }));
+
+        // Combine all links
+        const allLinks = [...data.links, ...packageLinks];
+
         // Build dynamic legend
         const legend = d3.select("#legend");
         packages.forEach((pkg, i) => {
@@ -200,10 +235,24 @@
         let linkDistanceValue = {{.LinkDistance}};
         let chargeStrengthValue = {{.ChargeStrength}};
         let collisionPaddingValue = {{.CollisionPadding}};
+        let packageClusteringValue = 0.3;
 
-        const linkForce = d3.forceLink(data.links)
+        const linkForce = d3.forceLink(allLinks)
             .id(d => d.id)
-            .distance(linkDistanceValue);
+            .distance(d => {
+                // Package anchor links are shorter to pull components together
+                if (d.type === "package-anchor") {
+                    return 30;
+                }
+                return linkDistanceValue;
+            })
+            .strength(d => {
+                // Package anchor links have configurable strength
+                if (d.type === "package-anchor") {
+                    return packageClusteringValue;
+                }
+                return 1;
+            });
 
         const chargeForce = d3.forceManyBody()
             .strength(chargeStrengthValue);
@@ -211,7 +260,7 @@
         const collisionForce = d3.forceCollide()
             .radius(d => d.size + collisionPaddingValue);
 
-        const simulation = d3.forceSimulation(data.nodes)
+        const simulation = d3.forceSimulation(allNodes)
             .force("link", linkForce)
             .force("charge", chargeForce)
             .force("center", d3.forceCenter(width / 2, height / 2))
@@ -241,19 +290,33 @@
             simulation.alpha(0.3).restart();
         });
 
-        // Draw links with arrows
+        d3.select("#packageClustering").on("input", function() {
+            packageClusteringValue = +this.value;
+            d3.select("#packageClusteringValue").text(packageClusteringValue);
+            linkForce.strength(d => {
+                if (d.type === "package-anchor") {
+                    return packageClusteringValue;
+                }
+                return 1;
+            });
+            simulation.alpha(0.3).restart();
+        });
+
+        // Draw links with arrows (only visible links, not package anchors)
+        const visibleLinks = allLinks.filter(d => d.type !== "package-anchor");
         const link = g.append("g")
             .selectAll("line")
-            .data(data.links)
+            .data(visibleLinks)
             .join("line")
             .attr("class", d => "link " + d.type)
             .attr("stroke", "#999")
             .attr("marker-end", d => "url(#arrow-" + d.type + ")");
 
-        // Draw nodes
+        // Draw nodes (only visible nodes, not anchors)
+        const visibleNodes = allNodes.filter(d => !d.isAnchor);
         const node = g.append("g")
             .selectAll("g")
-            .data(data.nodes)
+            .data(visibleNodes)
             .join("g")
             .attr("class", "node")
             .call(d3.drag()
