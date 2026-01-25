@@ -17,6 +17,7 @@ Unlike tools that require manual wiring or extensive configuration, diagg infers
 - Dotted lines showing interface implementations
 - Components grouped by package boundaries
 - Automatic classification (Service, Repository, Handler, etc.)
+- Visual hierarchy based on connectivity - heavily-used components rendered more prominently
 
 ## Install
 

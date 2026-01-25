@@ -66,10 +66,24 @@ The analyzer detects dependencies from multiple sources:
 
 This ensures that components like `PlantUMLGenerator` correctly show dependencies on `AnalyzedComponent` (via method parameters) even when they don't store them as fields.
 
+## Connectivity Metrics
+
+The analyzer includes a metrics system ([analyzer/metrics.go](analyzer/metrics.go)) that calculates graph-theoretic properties for layout optimization:
+
+- **In-degree** - How many components depend on this component
+- **Out-degree** - How many components this component depends on
+- **Role classification** - Components are categorized by connectivity patterns:
+  - `hub` - High in-degree (many depend on it) - typically core abstractions/interfaces
+  - `leaf` - High out-degree, low in-degree (depends on many, few depend on it) - typically application entry points
+  - `central` - High total connectivity - coordination/orchestration components
+  - `ordinary` - Standard connectivity levels
+
+These metrics drive visual hierarchy in the generated diagrams - hubs are positioned centrally, leaves at the periphery.
+
 ## Development Notes
 
 - **AIDEV anchors** - Used throughout for AI-assisted development. Grep for `AIDEV-NOTE:`, `AIDEV-TODO:`, or `AIDEV-QUESTION:`
-  - Key anchors: `method-deps`, `method-extraction`, `test-cross-pkg-deps`
+  - Key anchors: `graph-metrics`, `method-deps`, `method-extraction`, `test-cross-pkg-deps`, `visual-hierarchy`
 - **Testing strategy** - TDD approach with comprehensive test coverage:
   - Cross-package dependency detection ([analyzer_test.go:14](analyzer/analyzer_test.go#L14))
   - Interface implementation detection ([analyzer_test.go:70](analyzer/analyzer_test.go#L70))
