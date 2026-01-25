@@ -1,42 +1,50 @@
 @startuml
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
 
+AddComponentTag("hub", $borderThickness="5", $fontColor="#000000", $borderColor="darkBlue")
+AddComponentTag("central", $borderThickness="3", $fontColor="#000000", $borderColor="darkBlue")
+AddComponentTag("leaf", $borderThickness="1")
+
 title Component Diagram - diagg
+
+Container_Boundary(parser_boundary, "parser") {
+Component(Component, "Component", "Go", "parser component", $tags="hub")
+Component(PackageTypeInfo, "PackageTypeInfo", "Go", "parser component")
+Component(Parser, "Parser", "Go", "parser component")
+Component(Method, "Method", "Go", "parser component")
+Component(Field, "Field", "Go", "parser component")
+Component(InterfaceMethod, "InterfaceMethod", "Go", "parser component")
+}
+
+Container_Boundary(analyzer_boundary, "analyzer") {
+Component(AnalyzedComponent, "AnalyzedComponent", "Go", "analyzer component", $tags="central")
+Component(ComponentType, "ComponentType", "Go", "analyzer component")
+Component(Dependency, "Dependency", "Go", "analyzer component")
+Component(InterfaceImplementation, "InterfaceImplementation", "Go", "analyzer component")
+Component(ComponentMetrics, "ComponentMetrics", "Go", "analyzer component")
+Component(ComponentRole, "ComponentRole", "Go", "analyzer component")
+Component(Analyzer, "Analyzer", "Go", "analyzer component", $tags="leaf")
+}
 
 Container_Boundary(generator_boundary, "generator") {
 Component(PlantUMLGenerator, "PlantUMLGenerator", "Go", "generator component")
 }
 
-Container_Boundary(parser_boundary, "parser") {
-Component(Component, "Component", "Go", "parser component")
-Component(Field, "Field", "Go", "parser component")
-Component(Method, "Method", "Go", "parser component")
-Component(InterfaceMethod, "InterfaceMethod", "Go", "parser component")
-Component(Parser, "Parser", "Go", "parser component")
-Component(PackageTypeInfo, "PackageTypeInfo", "Go", "parser component")
-}
 
-Container_Boundary(analyzer_boundary, "analyzer") {
-Component(ComponentType, "ComponentType", "Go", "analyzer component")
-Component(AnalyzedComponent, "AnalyzedComponent", "Go", "analyzer component")
-Component(Dependency, "Dependency", "Go", "analyzer component")
-Component(InterfaceImplementation, "InterfaceImplementation", "Go", "analyzer component")
-Component(Analyzer, "Analyzer", "Go", "analyzer component")
-}
-
-
-Rel(Component, Field, "uses")
-Rel(Component, Method, "uses")
+Rel_U(Component, Field, "uses")
+Rel_U(Component, Method, "uses")
 Rel(Parser, Component, "uses")
 Rel(Parser, PackageTypeInfo, "uses")
 Rel(AnalyzedComponent, Component, "uses")
 Rel(AnalyzedComponent, ComponentType, "uses")
 Rel(AnalyzedComponent, Dependency, "uses")
 Rel(AnalyzedComponent, InterfaceImplementation, "uses")
+Rel(AnalyzedComponent, ComponentMetrics, "uses")
+Rel(AnalyzedComponent, ComponentRole, "uses")
 Rel(Dependency, ComponentType, "uses")
-Rel(Analyzer, Component, "uses")
-Rel(Analyzer, AnalyzedComponent, "uses")
-Rel(Analyzer, PackageTypeInfo, "uses")
+Rel_D(Analyzer, Component, "uses")
+Rel_D(Analyzer, AnalyzedComponent, "uses")
+Rel_D(Analyzer, PackageTypeInfo, "uses")
 Rel(PlantUMLGenerator, AnalyzedComponent, "uses")
 
 @enduml

@@ -31,6 +31,8 @@ type AnalyzedComponent struct {
 	Dependencies []Dependency
 	Implements   []InterfaceImplementation // Interfaces this component implements
 	IsInterface  bool                      // True if this component is an interface
+	Metrics      *ComponentMetrics         // Graph connectivity metrics for layout optimization
+	Role         ComponentRole             // Architectural role based on connectivity
 }
 
 // Dependency represents a relationship between components
@@ -93,6 +95,14 @@ func (a *Analyzer) Analyze(components []parser.Component) []AnalyzedComponent {
 	// Second pass: extract dependencies from struct fields
 	for i := range analyzed {
 		analyzed[i].Dependencies = a.extractDependencies(analyzed[i].Component, componentMap, interfaceMap)
+	}
+
+	// Third pass: calculate metrics and assign roles
+	metrics := CalculateMetrics(analyzed)
+	for i := range analyzed {
+		compName := analyzed[i].Component.Name
+		analyzed[i].Metrics = metrics[compName]
+		analyzed[i].Role = ClassifyRole(metrics[compName], len(analyzed))
 	}
 
 	return analyzed
@@ -248,6 +258,14 @@ func (a *Analyzer) AnalyzeWithTypes(
 				}
 			}
 		}
+	}
+
+	// Fourth pass: calculate metrics and assign roles
+	metrics := CalculateMetrics(analyzed)
+	for i := range analyzed {
+		compName := analyzed[i].Component.Name
+		analyzed[i].Metrics = metrics[compName]
+		analyzed[i].Role = ClassifyRole(metrics[compName], len(analyzed))
 	}
 
 	return analyzed
