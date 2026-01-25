@@ -7,48 +7,50 @@ AddComponentTag("leaf", $borderThickness="1")
 
 title Component Diagram - diagg
 
+Container_Boundary(analyzer_boundary, "analyzer") {
+Component(ComponentType, "ComponentType", "Go", "analyzer component", $tags="hub")
+Component(AnalyzedComponent, "AnalyzedComponent", "Go", "analyzer component", $tags="central")
+Component(Dependency, "Dependency", "Go", "analyzer component")
+Component(ComponentRole, "ComponentRole", "Go", "analyzer component")
+Component(InterfaceImplementation, "InterfaceImplementation", "Go", "analyzer component")
+Component(ComponentMetrics, "ComponentMetrics", "Go", "analyzer component")
+Component(Analyzer, "Analyzer", "Go", "analyzer component", $tags="leaf")
+}
+
 Container_Boundary(config_boundary, "config") {
-Component(ComponentDescriptions, "ComponentDescriptions", "Go", "config component")
-Component(TechnologyInference, "TechnologyInference", "Go", "config component")
+Component(Config, "Config", "Go", "config component", $tags="central")
 Component(VisualStyling, "VisualStyling", "Go", "config component")
 Component(DefaultValues, "DefaultValues", "Go", "config component")
 Component(ComponentPatterns, "ComponentPatterns", "Go", "config component")
-Component(Config, "Config", "Go", "config component", $tags="leaf")
-}
-
-Container_Boundary(generator_boundary, "generator") {
-Component(PlantUMLGenerator, "PlantUMLGenerator", "Go", "generator component")
-}
-
-Container_Boundary(analyzer_boundary, "analyzer") {
-Component(AnalyzedComponent, "AnalyzedComponent", "Go", "analyzer component", $tags="central")
-Component(ComponentType, "ComponentType", "Go", "analyzer component")
-Component(Dependency, "Dependency", "Go", "analyzer component")
-Component(InterfaceImplementation, "InterfaceImplementation", "Go", "analyzer component")
-Component(ComponentMetrics, "ComponentMetrics", "Go", "analyzer component")
-Component(ComponentRole, "ComponentRole", "Go", "analyzer component")
-Component(Analyzer, "Analyzer", "Go", "analyzer component", $tags="leaf")
+Component(ComponentDescriptions, "ComponentDescriptions", "Go", "config component")
+Component(TechnologyInference, "TechnologyInference", "Go", "config component")
 }
 
 Container_Boundary(parser_boundary, "parser") {
 Component(Component, "Component", "Go", "parser component")
-Component(PackageTypeInfo, "PackageTypeInfo", "Go", "parser component")
-Component(Parser, "Parser", "Go", "parser component")
 Component(Field, "Field", "Go", "parser component")
 Component(Method, "Method", "Go", "parser component")
+Component(PackageTypeInfo, "PackageTypeInfo", "Go", "parser component")
 Component(InterfaceMethod, "InterfaceMethod", "Go", "parser component")
+Component(Parser, "Parser", "Go", "parser component", $tags="leaf")
+}
+
+Container_Boundary(generator_boundary, "generator") {
+Component(PlantUMLGenerator, "PlantUMLGenerator", "Go", "generator component", $tags="leaf")
 }
 
 
-Rel_D(Config, ComponentPatterns, "uses")
-Rel_D(Config, ComponentDescriptions, "uses")
-Rel_D(Config, TechnologyInference, "uses")
-Rel_D(Config, VisualStyling, "uses")
-Rel_D(Config, DefaultValues, "uses")
+Rel(Config, ComponentPatterns, "uses")
+Rel(Config, ComponentDescriptions, "uses")
+Rel(Config, TechnologyInference, "uses")
+Rel(Config, VisualStyling, "uses")
+Rel(Config, DefaultValues, "uses")
 Rel(Component, Field, "uses")
 Rel(Component, Method, "uses")
-Rel(Parser, Component, "uses")
-Rel(Parser, PackageTypeInfo, "uses")
+Rel_D(Parser, Component, "uses")
+Rel_D(Parser, Field, "uses")
+Rel_D(Parser, PackageTypeInfo, "uses")
+Rel_D(Parser, Method, "uses")
 Rel(AnalyzedComponent, Component, "uses")
 Rel(AnalyzedComponent, ComponentType, "uses")
 Rel(AnalyzedComponent, Dependency, "uses")
@@ -56,9 +58,16 @@ Rel(AnalyzedComponent, InterfaceImplementation, "uses")
 Rel(AnalyzedComponent, ComponentMetrics, "uses")
 Rel(AnalyzedComponent, ComponentRole, "uses")
 Rel(Dependency, ComponentType, "uses")
+Rel_D(Analyzer, Config, "uses")
 Rel_D(Analyzer, Component, "uses")
 Rel_D(Analyzer, AnalyzedComponent, "uses")
+Rel_D(Analyzer, ComponentType, "uses")
+Rel_D(Analyzer, Dependency, "uses")
 Rel_D(Analyzer, PackageTypeInfo, "uses")
-Rel(PlantUMLGenerator, AnalyzedComponent, "uses")
+Rel_D(PlantUMLGenerator, Config, "uses")
+Rel_D(PlantUMLGenerator, AnalyzedComponent, "uses")
+Rel_D(PlantUMLGenerator, ComponentRole, "uses")
+Rel_D(PlantUMLGenerator, Dependency, "uses")
+Rel_D(PlantUMLGenerator, ComponentType, "uses")
 
 @enduml

@@ -158,17 +158,13 @@ func (p *Parser) extractFields(structType *ast.StructType) []Field {
 	}
 
 	for _, field := range structType.Fields.List {
-		// Skip embedded fields or unexported fields
+		// Skip embedded fields (fields without names)
 		if len(field.Names) == 0 {
 			continue
 		}
 
 		for _, name := range field.Names {
-			// Skip unexported fields
-			if !ast.IsExported(name.Name) {
-				continue
-			}
-
+			// AIDEV-NOTE: dependency-tracking; include ALL fields (exported and unexported) for accurate dependency graphs
 			f := Field{
 				Name: name.Name,
 			}
@@ -343,10 +339,7 @@ func (p *Parser) extractFieldsWithTypeInfo(structType *ast.StructType, pkg *pack
 		}
 
 		for _, name := range field.Names {
-			if !ast.IsExported(name.Name) {
-				continue
-			}
-
+			// AIDEV-NOTE: dependency-tracking; include ALL fields (exported and unexported) for accurate dependency graphs
 			f := Field{
 				Name: name.Name,
 			}
@@ -395,7 +388,8 @@ func (p *Parser) extractMethodsForType(typeName string, pkg *packages.Package) [
 			// Check if this method belongs to our type
 			for _, recv := range funcDecl.Recv.List {
 				recvTypeName := p.extractReceiverTypeName(recv.Type)
-				if recvTypeName == typeName && ast.IsExported(funcDecl.Name.Name) {
+				// AIDEV-NOTE: dependency-tracking; include ALL methods (exported and unexported) for accurate dependency graphs
+				if recvTypeName == typeName {
 					method := Method{
 						Name:       funcDecl.Name.Name,
 						Parameters: p.extractFunctionParams(funcDecl.Type.Params),
