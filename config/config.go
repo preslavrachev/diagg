@@ -58,9 +58,33 @@ type TechnologyInference struct {
 
 // VisualStyling controls diagram appearance.
 type VisualStyling struct {
+	// PlantUML-specific styling
 	HubTag     string // PlantUML tag definition for hub components
 	CentralTag string // PlantUML tag definition for central components
 	LeafTag    string // PlantUML tag definition for leaf components
+
+	// D3-specific styling
+	D3 D3Styling
+}
+
+// D3Styling holds configuration for D3.js force-directed graph visualization.
+type D3Styling struct {
+	// Package color palette (will cycle through for multiple packages)
+	PackageColors []string
+
+	// Force simulation parameters
+	LinkDistance      int     // Distance between connected nodes (default: 100)
+	ChargeStrength    int     // Negative = repulsion, positive = attraction (default: -300)
+	CollisionPadding  int     // Extra space around nodes to prevent overlap (default: 5)
+	CenteringStrength float64 // Strength of forces pulling nodes toward center (default: 0.03)
+
+	// Node sizing
+	BaseNodeSize    int // Base size for nodes (default: 10)
+	SizeScaleFactor int // Multiplier for connectivity-based sizing (default: 2)
+
+	// Arrow configuration
+	ArrowMarkerSize   int // Size of arrow markers (default: 6)
+	ArrowHeadDistance int // Distance from node edge to arrow tip (default: 8)
 }
 
 // DefaultValues provides sensible defaults for optional fields.
@@ -127,6 +151,48 @@ func New() *Config {
 			HubTag:     `AddComponentTag("hub", $borderThickness="5", $fontColor="#000000", $borderColor="darkBlue")`,
 			CentralTag: `AddComponentTag("central", $borderThickness="3", $fontColor="#000000", $borderColor="darkBlue")`,
 			LeafTag:    `AddComponentTag("leaf", $borderThickness="1")`,
+			D3: D3Styling{
+				PackageColors: []string{
+					"#4285f4", // Blue
+					"#ea4335", // Red
+					"#34a853", // Green
+					"#fbbc04", // Yellow
+					"#9c27b0", // Purple
+					"#00bcd4", // Cyan
+					"#ff6d00", // Deep Orange
+					"#795548", // Brown
+					"#e91e63", // Pink
+					"#009688", // Teal
+					"#3f51b5", // Indigo
+					"#8bc34a", // Light Green
+					"#ff9800", // Orange
+					"#607d8b", // Blue Grey
+					"#f44336", // Deep Red
+					"#2196f3", // Light Blue
+					"#cddc39", // Lime
+					"#673ab7", // Deep Purple
+					"#00e676", // Bright Green
+					"#ffc107", // Amber
+					"#03a9f4", // Sky Blue
+					"#ff5722", // Red Orange
+					"#9e9e9e", // Grey
+					"#ffeb3b", // Bright Yellow
+					"#e040fb", // Bright Purple
+					"#1de9b6", // Turquoise
+					"#ffab40", // Light Orange
+					"#536dfe", // Bright Indigo
+					"#b2ff59", // Neon Green
+					"#ff6e40", // Coral
+				},
+				LinkDistance:      80,   // Shorter links keep connected components closer
+				ChargeStrength:    -150, // Reduced repulsion to compact the graph
+				CollisionPadding:  3,    // Tighter spacing between nodes
+				CenteringStrength: 0.03, // Weak gravity toward center to contain orphans
+				BaseNodeSize:      10,
+				SizeScaleFactor:   2,
+				ArrowMarkerSize:   6,
+				ArrowHeadDistance: 8,
+			},
 		},
 
 		Defaults: DefaultValues{

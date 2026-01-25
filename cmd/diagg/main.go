@@ -29,6 +29,12 @@ func main() {
 				Value:   "",
 				Usage:   "Diagram title",
 			},
+			&cli.StringFlag{
+				Name:    "format",
+				Aliases: []string{"f"},
+				Value:   "plantuml",
+				Usage:   "Output format: plantuml or d3",
+			},
 		},
 		Action: runDiagg,
 	}
@@ -95,9 +101,16 @@ func runDiagg(c *cli.Context) error {
 	}
 
 	// Step 3: Generate diagram
+	format := c.String("format")
 	outputPath := c.String("output")
 	if outputPath == "" {
-		outputPath = cfg.Defaults.OutputFile
+		// Set default output file based on format
+		switch format {
+		case "d3":
+			outputPath = "diagram.html"
+		default:
+			outputPath = cfg.Defaults.OutputFile
+		}
 	}
 
 	title := c.String("title")
@@ -111,15 +124,33 @@ func runDiagg(c *cli.Context) error {
 	}
 	defer outFile.Close()
 
-	gen := generator.NewPlantUMLGenerator(title, cfg)
+	// Select generator based on format
+	var gen generator.Generator
+	switch format {
+	case "d3":
+		gen = generator.NewD3Generator(title, cfg)
+	case "plantuml":
+		gen = generator.NewPlantUMLGenerator(title, cfg)
+	default:
+		return fmt.Errorf("unknown format: %s (supported: plantuml, d3)", format)
+	}
+
 	if err := gen.Generate(analyzed, outFile); err != nil {
 		return fmt.Errorf("generating diagram: %w", err)
 	}
 
 	fmt.Printf("\nDiagram written to: %s\n", outputPath)
-	fmt.Println("\nTo render the diagram:")
-	fmt.Printf("  plantuml %s\n", outputPath)
-	fmt.Println("  OR visit: http://www.plantuml.com/plantuml/uml/")
+
+	// Format-specific instructions
+	switch format {
+	case "plantuml":
+		fmt.Println("\nTo render the diagram:")
+		fmt.Printf("  plantuml %s\n", outputPath)
+		fmt.Println("  OR visit: http://www.plantuml.com/plantuml/uml/")
+	case "d3":
+		fmt.Println("\nTo view the diagram:")
+		fmt.Printf("  open %s\n", outputPath)
+	}
 
 	return nil
 }

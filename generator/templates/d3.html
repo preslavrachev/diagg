@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{{.Title}}</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f5f5;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        #graph {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .node circle {
+            stroke: #fff;
+            stroke-width: 2px;
+            cursor: move;
+        }
+
+        .node text {
+            font-size: 12px;
+            pointer-events: none;
+            text-anchor: middle;
+            dominant-baseline: middle;
+        }
+
+        .link {
+            stroke: #999;
+            stroke-opacity: 0.6;
+        }
+
+        .link.dependency {
+            stroke-width: 2px;
+        }
+
+        .link.implementation {
+            stroke-width: 1.5px;
+            stroke-dasharray: 5,5;
+        }
+
+        /* Arrow markers */
+        marker {
+            fill: #999;
+        }
+
+        .controls {
+            position: absolute;
+            top: 80px;
+            left: 20px;
+            background: white;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+            width: 250px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #333;
+        }
+
+        .control-group input[type="range"] {
+            width: 100%;
+            margin-bottom: 3px;
+        }
+
+        .control-group .value {
+            font-size: 11px;
+            color: #666;
+        }
+
+        .legend {
+            position: absolute;
+            top: 80px;
+            right: 40px;
+            background: white;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .legend-item {
+            margin: 5px 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            margin-right: 8px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            box-shadow: 0 0 0 1px #ddd;
+        }
+    </style>
+</head>
+<body>
+    <h1>{{.Title}}</h1>
+    <svg id="graph"></svg>
+
+    <div class="controls">
+        <div><strong>Force Parameters</strong></div>
+        <div class="control-group">
+            <label>Link Distance</label>
+            <input type="range" id="linkDistance" min="20" max="200" value="{{.LinkDistance}}">
+            <div class="value" id="linkDistanceValue">{{.LinkDistance}}</div>
+        </div>
+        <div class="control-group">
+            <label>Repulsion</label>
+            <input type="range" id="chargeStrength" min="-500" max="-50" value="{{.ChargeStrength}}">
+            <div class="value" id="chargeStrengthValue">{{.ChargeStrength}}</div>
+        </div>
+        <div class="control-group">
+            <label>Collision Padding</label>
+            <input type="range" id="collisionPadding" min="1" max="20" value="{{.CollisionPadding}}">
+            <div class="value" id="collisionPaddingValue">{{.CollisionPadding}}</div>
+        </div>
+    </div>
+
+    <div class="legend" id="legend">
+        <div><strong>Packages</strong></div>
+    </div>
+
+    <script>
+        const data = {{.GraphJSON}};
+        const colors = {{.ColorsJSON}};
+
+        // Set up SVG
+        const width = window.innerWidth - 40;
+        const height = window.innerHeight - 100;
+
+        const svg = d3.select("#graph")
+            .attr("width", width)
+            .attr("height", height)
+            .attr("viewBox", [0, 0, width, height]);
+
+        // Add zoom behavior
+        const g = svg.append("g");
+        svg.call(d3.zoom()
+            .scaleExtent([0.1, 4])
+            .on("zoom", (event) => g.attr("transform", event.transform)));
+
+        // Define arrow markers for directed edges
+        svg.append("defs").selectAll("marker")
+            .data(["dependency", "implementation"])
+            .join("marker")
+            .attr("id", d => "arrow-" + d)
+            .attr("viewBox", "0 -5 10 10")
+            .attr("refX", 20)
+            .attr("refY", 0)
+            .attr("markerWidth", {{.ArrowMarkerSize}})
+            .attr("markerHeight", {{.ArrowMarkerSize}})
+            .attr("orient", "auto")
+            .append("path")
+            .attr("d", "M0,-5L10,0L0,5")
+            .attr("fill", "#999");
+
+        // Color scale by package (not type)
+        const packages = [...new Set(data.nodes.map(n => n.package))];
+        const packageColorMap = {};
+        packages.forEach((pkg, i) => {
+            packageColorMap[pkg] = colors[i % colors.length];
+        });
+
+        const colorScale = (pkg) => packageColorMap[pkg] || "#999";
+
+        // Build dynamic legend
+        const legend = d3.select("#legend");
+        packages.forEach((pkg, i) => {
+            const item = legend.append("div").attr("class", "legend-item");
+            item.append("div")
+                .attr("class", "legend-color")
+                .style("background", colors[i % colors.length]);
+            item.append("span").text(pkg);
+        });
+
+        // Create force simulation with configurable parameters
+        let linkDistanceValue = {{.LinkDistance}};
+        let chargeStrengthValue = {{.ChargeStrength}};
+        let collisionPaddingValue = {{.CollisionPadding}};
+
+        const linkForce = d3.forceLink(data.links)
+            .id(d => d.id)
+            .distance(linkDistanceValue);
+
+        const chargeForce = d3.forceManyBody()
+            .strength(chargeStrengthValue);
+
+        const collisionForce = d3.forceCollide()
+            .radius(d => d.size + collisionPaddingValue);
+
+        const simulation = d3.forceSimulation(data.nodes)
+            .force("link", linkForce)
+            .force("charge", chargeForce)
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("collision", collisionForce)
+            .force("x", d3.forceX(width / 2).strength({{.CenteringStrength}}))
+            .force("y", d3.forceY(height / 2).strength({{.CenteringStrength}}));
+
+        // Wire up slider controls
+        d3.select("#linkDistance").on("input", function() {
+            linkDistanceValue = +this.value;
+            d3.select("#linkDistanceValue").text(linkDistanceValue);
+            linkForce.distance(linkDistanceValue);
+            simulation.alpha(0.3).restart();
+        });
+
+        d3.select("#chargeStrength").on("input", function() {
+            chargeStrengthValue = +this.value;
+            d3.select("#chargeStrengthValue").text(chargeStrengthValue);
+            chargeForce.strength(chargeStrengthValue);
+            simulation.alpha(0.3).restart();
+        });
+
+        d3.select("#collisionPadding").on("input", function() {
+            collisionPaddingValue = +this.value;
+            d3.select("#collisionPaddingValue").text(collisionPaddingValue);
+            collisionForce.radius(d => d.size + collisionPaddingValue);
+            simulation.alpha(0.3).restart();
+        });
+
+        // Draw links with arrows
+        const link = g.append("g")
+            .selectAll("line")
+            .data(data.links)
+            .join("line")
+            .attr("class", d => "link " + d.type)
+            .attr("stroke", "#999")
+            .attr("marker-end", d => "url(#arrow-" + d.type + ")");
+
+        // Draw nodes
+        const node = g.append("g")
+            .selectAll("g")
+            .data(data.nodes)
+            .join("g")
+            .attr("class", "node")
+            .call(d3.drag()
+                .on("start", dragstarted)
+                .on("drag", dragged)
+                .on("end", dragended));
+
+        node.append("circle")
+            .attr("r", d => d.size)
+            .attr("fill", d => colorScale(d.package));
+
+        node.append("text")
+            .text(d => d.name)
+            .attr("dy", d => d.size + 15);
+
+        // Add tooltips
+        node.append("title")
+            .text(d => `${d.name}
+Type: ${d.type}
+Package: ${d.package}
+Role: ${d.role}`);
+
+        // Update positions on each tick
+        simulation.on("tick", () => {
+            link.each(function(d) {
+                // Calculate edge endpoints to stop at node boundaries
+                const dx = d.target.x - d.source.x;
+                const dy = d.target.y - d.source.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                // Stop at source node edge
+                const sourceX = d.source.x + (dx / dist) * d.source.size;
+                const sourceY = d.source.y + (dy / dist) * d.source.size;
+
+                // Stop at target node edge (with space for arrow)
+                const targetX = d.target.x - (dx / dist) * (d.target.size + {{.ArrowHeadDistance}});
+                const targetY = d.target.y - (dy / dist) * (d.target.size + {{.ArrowHeadDistance}});
+
+                d3.select(this)
+                    .attr("x1", sourceX)
+                    .attr("y1", sourceY)
+                    .attr("x2", targetX)
+                    .attr("y2", targetY);
+            });
+
+            node.attr("transform", d => `translate(${d.x},${d.y})`);
+        });
+
+        // Drag functions
+        function dragstarted(event) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            event.subject.fx = event.subject.x;
+            event.subject.fy = event.subject.y;
+        }
+
+        function dragged(event) {
+            event.subject.fx = event.x;
+            event.subject.fy = event.y;
+        }
+
+        function dragended(event) {
+            if (!event.active) simulation.alphaTarget(0);
+            event.subject.fx = null;
+            event.subject.fy = null;
+        }
+    </script>
+</body>
+</html>
