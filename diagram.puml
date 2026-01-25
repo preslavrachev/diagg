@@ -7,13 +7,17 @@ AddComponentTag("leaf", $borderThickness="1")
 
 title Component Diagram - diagg
 
-Container_Boundary(parser_boundary, "parser") {
-Component(Component, "Component", "Go", "parser component", $tags="hub")
-Component(PackageTypeInfo, "PackageTypeInfo", "Go", "parser component")
-Component(Parser, "Parser", "Go", "parser component")
-Component(Method, "Method", "Go", "parser component")
-Component(Field, "Field", "Go", "parser component")
-Component(InterfaceMethod, "InterfaceMethod", "Go", "parser component")
+Container_Boundary(config_boundary, "config") {
+Component(ComponentDescriptions, "ComponentDescriptions", "Go", "config component")
+Component(TechnologyInference, "TechnologyInference", "Go", "config component")
+Component(VisualStyling, "VisualStyling", "Go", "config component")
+Component(DefaultValues, "DefaultValues", "Go", "config component")
+Component(ComponentPatterns, "ComponentPatterns", "Go", "config component")
+Component(Config, "Config", "Go", "config component", $tags="leaf")
+}
+
+Container_Boundary(generator_boundary, "generator") {
+Component(PlantUMLGenerator, "PlantUMLGenerator", "Go", "generator component")
 }
 
 Container_Boundary(analyzer_boundary, "analyzer") {
@@ -26,13 +30,23 @@ Component(ComponentRole, "ComponentRole", "Go", "analyzer component")
 Component(Analyzer, "Analyzer", "Go", "analyzer component", $tags="leaf")
 }
 
-Container_Boundary(generator_boundary, "generator") {
-Component(PlantUMLGenerator, "PlantUMLGenerator", "Go", "generator component")
+Container_Boundary(parser_boundary, "parser") {
+Component(Component, "Component", "Go", "parser component")
+Component(PackageTypeInfo, "PackageTypeInfo", "Go", "parser component")
+Component(Parser, "Parser", "Go", "parser component")
+Component(Field, "Field", "Go", "parser component")
+Component(Method, "Method", "Go", "parser component")
+Component(InterfaceMethod, "InterfaceMethod", "Go", "parser component")
 }
 
 
-Rel_U(Component, Field, "uses")
-Rel_U(Component, Method, "uses")
+Rel_D(Config, ComponentPatterns, "uses")
+Rel_D(Config, ComponentDescriptions, "uses")
+Rel_D(Config, TechnologyInference, "uses")
+Rel_D(Config, VisualStyling, "uses")
+Rel_D(Config, DefaultValues, "uses")
+Rel(Component, Field, "uses")
+Rel(Component, Method, "uses")
 Rel(Parser, Component, "uses")
 Rel(Parser, PackageTypeInfo, "uses")
 Rel(AnalyzedComponent, Component, "uses")

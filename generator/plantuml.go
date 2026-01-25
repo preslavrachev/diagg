@@ -6,20 +6,25 @@ import (
 	"strings"
 
 	"github.com/preslavrachev/diagg/analyzer"
+	"github.com/preslavrachev/diagg/config"
 )
 
-// PlantUMLGenerator generates C4 Component diagrams in PlantUML format
+// PlantUMLGenerator generates C4 Component diagrams in PlantUML format.
+// Config is read-only after initialization.
 type PlantUMLGenerator struct {
-	title string
+	title  string
+	config *config.Config
 }
 
-// NewPlantUMLGenerator creates a new PlantUML generator
-func NewPlantUMLGenerator(title string) *PlantUMLGenerator {
+// NewPlantUMLGenerator creates a new PlantUML generator.
+// The config pointer is stored but never modified - it's read-only.
+func NewPlantUMLGenerator(title string, cfg *config.Config) *PlantUMLGenerator {
 	if title == "" {
-		title = "Component Diagram"
+		title = cfg.Defaults.DiagramTitle
 	}
 	return &PlantUMLGenerator{
-		title: title,
+		title:  title,
+		config: cfg,
 	}
 }
 
@@ -81,9 +86,9 @@ func (g *PlantUMLGenerator) Generate(components []analyzer.AnalyzedComponent, w 
 // AIDEV-NOTE: visual-hierarchy; defines tags for hub/central/leaf components
 func (g *PlantUMLGenerator) writeStyleTags(w io.Writer) error {
 	tags := []string{
-		`AddComponentTag("hub", $borderThickness="5", $fontColor="#000000", $borderColor="darkBlue")`,
-		`AddComponentTag("central", $borderThickness="3", $fontColor="#000000", $borderColor="darkBlue")`,
-		`AddComponentTag("leaf", $borderThickness="1")`,
+		g.config.Styling.HubTag,
+		g.config.Styling.CentralTag,
+		g.config.Styling.LeafTag,
 	}
 
 	for _, tag := range tags {
@@ -141,25 +146,31 @@ func (g *PlantUMLGenerator) writeComponent(comp analyzer.AnalyzedComponent, w io
 
 // generateDescription creates a human-readable description for the component
 func (g *PlantUMLGenerator) generateDescription(comp analyzer.AnalyzedComponent) string {
+	desc := &g.config.Descriptions
+
 	switch comp.Type {
 	case analyzer.TypeService:
-		return "Business logic service"
+		return desc.Service
 	case analyzer.TypeRepository:
-		return "Data access layer"
+		return desc.Repository
 	case analyzer.TypeHandler:
-		return "HTTP request handler"
+		return desc.Handler
 	case analyzer.TypeController:
-		return "Request controller"
+		return desc.Controller
 	case analyzer.TypeClient:
-		return "External service client"
+		return desc.Client
 	case analyzer.TypeCache:
-		return "Caching layer"
+		return desc.Cache
 	case analyzer.TypeGateway:
-		return "External gateway"
+		return desc.Gateway
 	case analyzer.TypeMiddleware:
-		return "Middleware component"
+		return desc.Middleware
 	default:
-		return fmt.Sprintf("%s component", comp.Component.PackageName)
+		pkgName := comp.Component.PackageName
+		if pkgName == "" {
+			pkgName = g.config.Defaults.PackageFallback
+		}
+		return fmt.Sprintf(desc.Unknown, pkgName)
 	}
 }
 
@@ -298,7 +309,7 @@ func (g *PlantUMLGenerator) groupByPackage(components []analyzer.AnalyzedCompone
 	for _, comp := range components {
 		pkgName := comp.Component.PackageName
 		if pkgName == "" {
-			pkgName = "main"
+			pkgName = g.config.Defaults.PackageFallback
 		}
 		pkgMap[pkgName] = append(pkgMap[pkgName], comp)
 	}

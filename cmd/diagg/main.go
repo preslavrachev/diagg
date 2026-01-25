@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/preslavrachev/diagg/analyzer"
+	"github.com/preslavrachev/diagg/config"
 	"github.com/preslavrachev/diagg/generator"
 	"github.com/preslavrachev/diagg/parser"
 	"github.com/urfave/cli/v2"
@@ -19,7 +20,7 @@ func main() {
 			&cli.StringFlag{
 				Name:    "output",
 				Aliases: []string{"o"},
-				Value:   "diagram.puml",
+				Value:   "", // Will use config default if empty
 				Usage:   "Output file path for the diagram",
 			},
 			&cli.StringFlag{
@@ -62,6 +63,9 @@ func runDiagg(c *cli.Context) error {
 
 	fmt.Printf("Analyzing Go code in: %s\n", absPath)
 
+	// Initialize configuration with sensible defaults
+	cfg := config.New()
+
 	// Step 1: Parse Go files with type information for interface detection
 	p := parser.NewParser()
 	components, pkgTypeInfo, err := p.ParseDirectoryWithTypes(absPath)
@@ -76,7 +80,7 @@ func runDiagg(c *cli.Context) error {
 	fmt.Printf("Found %d components\n", len(components))
 
 	// Step 2: Analyze components with type information (enables interface detection)
-	a := analyzer.NewAnalyzer()
+	a := analyzer.NewAnalyzer(cfg)
 	analyzed := a.AnalyzeWithTypes(components, pkgTypeInfo)
 
 	// Count by type
@@ -92,6 +96,10 @@ func runDiagg(c *cli.Context) error {
 
 	// Step 3: Generate diagram
 	outputPath := c.String("output")
+	if outputPath == "" {
+		outputPath = cfg.Defaults.OutputFile
+	}
+
 	title := c.String("title")
 	if title == "" {
 		title = fmt.Sprintf("Component Diagram - %s", filepath.Base(absPath))
@@ -103,7 +111,7 @@ func runDiagg(c *cli.Context) error {
 	}
 	defer outFile.Close()
 
-	gen := generator.NewPlantUMLGenerator(title)
+	gen := generator.NewPlantUMLGenerator(title, cfg)
 	if err := gen.Generate(analyzed, outFile); err != nil {
 		return fmt.Errorf("generating diagram: %w", err)
 	}

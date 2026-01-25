@@ -2,9 +2,9 @@ package analyzer
 
 import (
 	"go/types"
-	"regexp"
 	"strings"
 
+	"github.com/preslavrachev/diagg/config"
 	"github.com/preslavrachev/diagg/parser"
 )
 
@@ -48,24 +48,17 @@ type InterfaceImplementation struct {
 	InterfacePackage string
 }
 
-// Analyzer infers component types and relationships
+// Analyzer infers component types and relationships.
+// Config is read-only after initialization - safe to share across goroutines.
 type Analyzer struct {
-	patterns map[ComponentType]*regexp.Regexp
+	config *config.Config
 }
 
-// NewAnalyzer creates a new Analyzer with default patterns
-func NewAnalyzer() *Analyzer {
+// NewAnalyzer creates a new Analyzer with the provided configuration.
+// The config pointer is stored but never modified - it's read-only.
+func NewAnalyzer(cfg *config.Config) *Analyzer {
 	return &Analyzer{
-		patterns: map[ComponentType]*regexp.Regexp{
-			TypeService:    regexp.MustCompile(`(?i).*Service$`),
-			TypeRepository: regexp.MustCompile(`(?i).*Repository$|.*Repo$|.*Store$`),
-			TypeHandler:    regexp.MustCompile(`(?i).*Handler$`),
-			TypeController: regexp.MustCompile(`(?i).*Controller$`),
-			TypeClient:     regexp.MustCompile(`(?i).*Client$`),
-			TypeCache:      regexp.MustCompile(`(?i).*Cache$`),
-			TypeGateway:    regexp.MustCompile(`(?i).*Gateway$`),
-			TypeMiddleware: regexp.MustCompile(`(?i).*Middleware$`),
-		},
+		config: cfg,
 	}
 }
 
@@ -110,11 +103,32 @@ func (a *Analyzer) Analyze(components []parser.Component) []AnalyzedComponent {
 
 // classifyComponent determines the component type based on naming patterns
 func (a *Analyzer) classifyComponent(comp parser.Component) ComponentType {
-	// Check against all patterns
-	for compType, pattern := range a.patterns {
-		if pattern.MatchString(comp.Name) {
-			return compType
-		}
+	patterns := &a.config.Patterns
+
+	// Check patterns in order - first match wins
+	if patterns.Service.MatchString(comp.Name) {
+		return TypeService
+	}
+	if patterns.Repository.MatchString(comp.Name) {
+		return TypeRepository
+	}
+	if patterns.Handler.MatchString(comp.Name) {
+		return TypeHandler
+	}
+	if patterns.Controller.MatchString(comp.Name) {
+		return TypeController
+	}
+	if patterns.Client.MatchString(comp.Name) {
+		return TypeClient
+	}
+	if patterns.Cache.MatchString(comp.Name) {
+		return TypeCache
+	}
+	if patterns.Gateway.MatchString(comp.Name) {
+		return TypeGateway
+	}
+	if patterns.Middleware.MatchString(comp.Name) {
+		return TypeMiddleware
 	}
 
 	return TypeUnknown
@@ -122,43 +136,24 @@ func (a *Analyzer) classifyComponent(comp parser.Component) ComponentType {
 
 // inferTechnology makes educated guesses about the technology used
 func (a *Analyzer) inferTechnology(comp parser.Component) string {
-	switch a.classifyComponent(comp) {
-	case TypeService:
-		return "Go"
-	case TypeRepository:
-		// Look for field names that suggest database type
-		for _, field := range comp.Fields {
-			lower := strings.ToLower(field.TypeName)
-			if strings.Contains(lower, "sql") || strings.Contains(lower, "db") {
-				return "SQL Database"
-			}
-			if strings.Contains(lower, "mongo") {
-				return "MongoDB"
-			}
-			if strings.Contains(lower, "redis") {
-				return "Redis"
+	compType := a.classifyComponent(comp)
+
+	// First, check field names for specific technology patterns
+	for _, field := range comp.Fields {
+		lower := strings.ToLower(field.TypeName)
+		for pattern, tech := range a.config.TechnologyRules.DatabasePatterns {
+			if strings.Contains(lower, pattern) {
+				return tech
 			}
 		}
-		return "Database"
-	case TypeCache:
-		return "Cache"
-	case TypeHandler, TypeController:
-		return "HTTP"
-	case TypeClient:
-		// Check for gRPC or HTTP client patterns
-		for _, field := range comp.Fields {
-			if strings.Contains(strings.ToLower(field.TypeName), "grpc") {
-				return "gRPC"
-			}
-		}
-		return "HTTP Client"
-	case TypeGateway:
-		return "External System"
-	case TypeMiddleware:
-		return "HTTP Middleware"
-	default:
-		return "Go"
 	}
+
+	// Fall back to default technology for this component type
+	if defaultTech, ok := a.config.TechnologyRules.DefaultByType[string(compType)]; ok {
+		return defaultTech
+	}
+
+	return a.config.Defaults.UnknownTechnology
 }
 
 // extractDependencies identifies dependencies from struct fields

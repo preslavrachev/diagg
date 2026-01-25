@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/preslavrachev/diagg/config"
 	"github.com/preslavrachev/diagg/parser"
 )
 
@@ -29,7 +30,8 @@ func TestAnalyze_CrossPackageDependencies(t *testing.T) {
 	}
 
 	// Analyze
-	analyzer := NewAnalyzer()
+	cfg := config.New()
+	analyzer := NewAnalyzer(cfg)
 	analyzed := analyzer.Analyze(components)
 
 	// Find component A
@@ -94,7 +96,8 @@ func TestAnalyze_InterfaceImplementation(t *testing.T) {
 	}
 
 	// Analyze with type information
-	analyzer := NewAnalyzer()
+	cfg := config.New()
+	analyzer := NewAnalyzer(cfg)
 	analyzed := analyzer.AnalyzeWithTypes(components, pkgTypeInfo)
 
 	// Build lookup map
@@ -168,7 +171,8 @@ func TestAnalyze_MethodParameterDependencies(t *testing.T) {
 		t.Fatalf("ParseDirectoryWithTypes() failed: %v", err)
 	}
 
-	analyzer := NewAnalyzer()
+	cfg := config.New()
+	analyzer := NewAnalyzer(cfg)
 	analyzed := analyzer.AnalyzeWithTypes(components, pkgTypeInfo)
 
 	// Build lookup map
