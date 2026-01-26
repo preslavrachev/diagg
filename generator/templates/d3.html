@@ -81,39 +81,6 @@
             fill: #999;
         }
 
-        .controls {
-            position: absolute;
-            top: 80px;
-            left: 20px;
-            background: white;
-            padding: 20px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 13px;
-            width: 250px;
-        }
-
-        .control-group {
-            margin-bottom: 15px;
-        }
-
-        .control-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 500;
-            color: #333;
-        }
-
-        .control-group input[type="range"] {
-            width: 100%;
-            margin-bottom: 3px;
-        }
-
-        .control-group .value {
-            font-size: 11px;
-            color: #666;
-        }
-
         .legend {
             position: absolute;
             top: 80px;
@@ -144,30 +111,6 @@
 <body>
     <h1>{{.Title}}</h1>
     <svg id="graph"></svg>
-
-    <div class="controls">
-        <div><strong>Force Parameters</strong></div>
-        <div class="control-group">
-            <label>Link Distance</label>
-            <input type="range" id="linkDistance" min="20" max="200" value="{{.LinkDistance}}">
-            <div class="value" id="linkDistanceValue">{{.LinkDistance}}</div>
-        </div>
-        <div class="control-group">
-            <label>Repulsion</label>
-            <input type="range" id="chargeStrength" min="-500" max="-50" value="{{.ChargeStrength}}">
-            <div class="value" id="chargeStrengthValue">{{.ChargeStrength}}</div>
-        </div>
-        <div class="control-group">
-            <label>Collision Padding</label>
-            <input type="range" id="collisionPadding" min="1" max="20" value="{{.CollisionPadding}}">
-            <div class="value" id="collisionPaddingValue">{{.CollisionPadding}}</div>
-        </div>
-        <div class="control-group">
-            <label>Package Clustering</label>
-            <input type="range" id="packageClustering" min="0" max="1" step="0.05" value="0.3">
-            <div class="value" id="packageClusteringValue">0.3</div>
-        </div>
-    </div>
 
     <div class="legend" id="legend">
         <div><strong>Packages</strong></div>
@@ -264,12 +207,7 @@
             item.append("span").text(pkg);
         });
 
-        // Create force simulation with configurable parameters
-        let linkDistanceValue = {{.LinkDistance}};
-        let chargeStrengthValue = {{.ChargeStrength}};
-        let collisionPaddingValue = {{.CollisionPadding}};
-        let packageClusteringValue = 0.3;
-
+        // Create force simulation with fixed parameters
         const linkForce = d3.forceLink(allLinks)
             .id(d => d.id)
             .distance(d => {
@@ -277,21 +215,21 @@
                 if (d.type === "package-anchor") {
                     return 30;
                 }
-                return linkDistanceValue;
+                return {{.LinkDistance}};
             })
             .strength(d => {
-                // Package anchor links have configurable strength
+                // Package anchor links have fixed strength
                 if (d.type === "package-anchor") {
-                    return packageClusteringValue;
+                    return 0.3;
                 }
                 return 1;
             });
 
         const chargeForce = d3.forceManyBody()
-            .strength(chargeStrengthValue);
+            .strength({{.ChargeStrength}});
 
         const collisionForce = d3.forceCollide()
-            .radius(d => d.size + collisionPaddingValue);
+            .radius(d => d.size + {{.CollisionPadding}});
 
         const simulation = d3.forceSimulation(allNodes)
             .force("link", linkForce)
@@ -300,40 +238,6 @@
             .force("collision", collisionForce)
             .force("x", d3.forceX(width / 2).strength({{.CenteringStrength}}))
             .force("y", d3.forceY(height / 2).strength({{.CenteringStrength}}));
-
-        // Wire up slider controls
-        d3.select("#linkDistance").on("input", function() {
-            linkDistanceValue = +this.value;
-            d3.select("#linkDistanceValue").text(linkDistanceValue);
-            linkForce.distance(linkDistanceValue);
-            simulation.alpha(0.3).restart();
-        });
-
-        d3.select("#chargeStrength").on("input", function() {
-            chargeStrengthValue = +this.value;
-            d3.select("#chargeStrengthValue").text(chargeStrengthValue);
-            chargeForce.strength(chargeStrengthValue);
-            simulation.alpha(0.3).restart();
-        });
-
-        d3.select("#collisionPadding").on("input", function() {
-            collisionPaddingValue = +this.value;
-            d3.select("#collisionPaddingValue").text(collisionPaddingValue);
-            collisionForce.radius(d => d.size + collisionPaddingValue);
-            simulation.alpha(0.3).restart();
-        });
-
-        d3.select("#packageClustering").on("input", function() {
-            packageClusteringValue = +this.value;
-            d3.select("#packageClusteringValue").text(packageClusteringValue);
-            linkForce.strength(d => {
-                if (d.type === "package-anchor") {
-                    return packageClusteringValue;
-                }
-                return 1;
-            });
-            simulation.alpha(0.3).restart();
-        });
 
         // AIDEV-NOTE: package-hulls - Interactive hull visualization on node click
         const hullGroup = g.append("g").attr("class", "hulls");
