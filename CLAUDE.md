@@ -97,21 +97,24 @@ The tool supports multiple output formats via the generator interface:
    - Solid lines for dependencies, dotted for interface implementations
 
 2. **D3.js** - `diagram-d3.html`
-   - Interactive force-directed graph
-   - Package clustering with translucent hulls
-   - Draggable nodes, zoom/pan support
+   - Interactive force-directed graph with physics simulation
+   - Package clustering with translucent hulls (click nodes to highlight)
+   - Interactive labels, draggable nodes, zoom/pan support
 
 See [generator/plantuml.go](generator/plantuml.go) and [generator/d3.go](generator/d3.go) for implementation details.
 
 ## Development Notes
 
-- **AIDEV anchors** - Used throughout for AI-assisted development. Grep for `AIDEV-NOTE:`, `AIDEV-TODO:`, or `AIDEV-QUESTION:`
-  - Key anchors: `graph-metrics`, `method-deps`, `function-body-analysis`, `stdlib-filter`, `visual-hierarchy`
+- **AIDEV anchors** - Used throughout for AI-assisted development. Grep for `AIDEV-NOTE:`, `AIDEV-TODO:`, or `AIDEV-QUESTION:` to locate key implementation areas
+  - Core analysis: `function-body-analysis`, `method-deps`, `stdlib-filter`, `type-info-lookup`, `constructor-detection`
+  - Metrics & layout: `graph-metrics`, `visual-hierarchy`, `directional-hints`, `layout-optimization`
+  - Multi-entrypoint support: `main-package-detection`, `multiple-mains`, `main-entrypoint`
+  - Visualization: `package-clustering`, `package-hulls` (D3.js)
 - **Testing strategy** - TDD approach with comprehensive test coverage:
   - Cross-package dependency detection ([analyzer_test.go:14](analyzer/analyzer_test.go#L14))
   - Interface implementation detection ([analyzer_test.go:70](analyzer/analyzer_test.go#L70))
   - Method parameter dependency detection ([analyzer_test.go:154](analyzer/analyzer_test.go#L154))
   - Function body dependency extraction - BDD-style tests ([function_body_deps_test.go](analyzer/function_body_deps_test.go))
-- **Tests use table-driven patterns** with well-named constants for unit tests, BDD-style Given-When-Then for behavioral tests
+  - Multiple main packages ([parser_test.go:15](parser/parser_test.go#L15))
 - **Error handling** uses `fmt.Errorf("context: %w", err)` for proper error chains
 - **Example output**: [diagram.puml](diagram.puml) shows the tool's own component structure

@@ -10,7 +10,7 @@ Generates PlantUML C4 diagrams showing components, dependencies, and interface i
 
 ## Why diagg?
 
-Unlike tools that require manual wiring or extensive configuration, diagg infers everything from your code structure. It uses naming conventions (`*Service`, `*Repository`, `*Handler`, etc.) and full type analysis to detect relationships and interface implementations automatically.
+Unlike tools that require manual wiring or extensive configuration, diagg infers everything from your code structure. It uses naming conventions (`*Service`, `*Repository`, `*Handler`, etc.) and full type analysis to detect relationships and interface implementations automatically. Works with projects containing multiple `main` packages (multiple binaries).
 
 **What you get:**
 - Solid lines for dependencies (struct fields, method parameters/returns, function body type usage)
@@ -29,9 +29,9 @@ go install github.com/preslavrachev/diagg/cmd/diagg@latest
 ## Usage
 
 ```bash
-diagg [directory]                    # Analyze and generate diagram.puml (PlantUML)
-diagg -o output.puml -t "My App"     # Custom output file and title
-diagg --format d3 -o diagram.html    # Generate interactive D3.js visualization
+diagg [directory]                     # Analyze and generate diagram.puml (PlantUML)
+diagg -o output.puml -t "My App"      # Custom output file and title
+diagg --format d3 -o diagram.html     # Generate interactive D3.js force-directed graph
 ```
 
 **Rendering the diagram:**
