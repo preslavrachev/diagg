@@ -277,6 +277,14 @@ func (p *Parser) ParseDirectoryWithTypes(root string) ([]Component, *PackageType
 			pkgComponents := p.extractComponentsFromAST(syntax, pkg)
 			components = append(components, pkgComponents...)
 		}
+
+		// AIDEV-NOTE: main-package-detection; create synthetic component for main packages
+		if pkg.Name == "main" {
+			mainComponent := p.extractMainComponent(pkg)
+			if mainComponent != nil {
+				components = append(components, *mainComponent)
+			}
+		}
 	}
 
 	return components, pkgTypeInfo, nil
@@ -465,4 +473,145 @@ func (p *Parser) formatType(expr ast.Expr) string {
 		return "map[" + p.formatType(t.Key) + "]" + p.formatType(t.Value)
 	}
 	return "unknown"
+}
+
+// extractMainComponent creates a synthetic component for main packages
+// AIDEV-NOTE: main-entrypoint; extracts all types referenced by walking the type info
+// AIDEV-NOTE: multiple-mains; uses actual file location to distinguish between multiple main packages
+func (p *Parser) extractMainComponent(pkg *packages.Package) *Component {
+	if pkg.Name != "main" {
+		return nil
+	}
+
+	// Find a file that contains func main() to determine the actual location
+	var mainFilePath string
+	for _, syntax := range pkg.Syntax {
+		ast.Inspect(syntax, func(n ast.Node) bool {
+			if funcDecl, ok := n.(*ast.FuncDecl); ok {
+				if funcDecl.Name.Name == "main" && funcDecl.Recv == nil {
+					// Found func main() - extract file path
+					if pos := pkg.Fset.Position(funcDecl.Pos()); pos.IsValid() {
+						mainFilePath = pos.Filename
+						return false // stop searching
+					}
+				}
+			}
+			return true
+		})
+		if mainFilePath != "" {
+			break
+		}
+	}
+
+	// Derive component name from the directory containing main.go
+	// Examples:
+	//   /path/to/project/cmd/server/main.go -> "server"
+	//   /path/to/project/cmd/worker/main.go -> "worker"
+	//   /path/to/project/main.go -> "Main"
+	//   /some/weird/structure/foo/bar/main.go -> "bar"
+	var componentName string
+	if mainFilePath != "" {
+		// Get the directory containing the main file
+		dir := filepath.Dir(mainFilePath)
+		componentName = filepath.Base(dir)
+
+		// Check if this is the module root by looking for go.mod in this directory
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			// main.go is at module root
+			componentName = "Main"
+		} else if componentName == "." || componentName == "/" {
+			// Other root indicators
+			componentName = "Main"
+		}
+	} else {
+		// Fallback: no main function found (unusual), use package path
+		componentName = filepath.Base(pkg.PkgPath)
+		if componentName == "main" || componentName == "." {
+			componentName = "Main"
+		}
+	}
+
+	// Create synthetic component representing the main package
+	component := Component{
+		Name:        componentName,
+		PackageName: "main",
+		PackagePath: pkg.PkgPath,
+		Kind:        "entrypoint", // Special kind for main packages
+		Fields:      []Field{},    // Main doesn't have fields, but we'll populate with dependencies
+		Methods:     []Method{},
+	}
+
+	// Track unique type dependencies
+	depSet := make(map[string]bool)
+
+	// Extract module path from main package path
+	// For "github.com/user/project/cmd/server" -> "github.com/user/project"
+	// For "github.com/user/project" -> "github.com/user/project"
+	modulePath := pkg.PkgPath
+	if idx := strings.Index(modulePath, "/cmd/"); idx != -1 {
+		modulePath = modulePath[:idx]
+	}
+
+	// Helper to extract named types from a type
+	var extractTypes func(t types.Type)
+	extractTypes = func(t types.Type) {
+		if t == nil {
+			return
+		}
+
+		switch typ := t.(type) {
+		case *types.Named:
+			// This is a named type (struct, interface, etc.)
+			if obj := typ.Obj(); obj != nil {
+				if objPkg := obj.Pkg(); objPkg != nil {
+					pkgPath := objPkg.Path()
+					// Only include types from our project (same module)
+					if strings.HasPrefix(pkgPath, modulePath) && objPkg.Name() != "main" {
+						fullName := objPkg.Name() + "." + obj.Name()
+						depSet[fullName] = true
+					}
+				}
+			}
+		case *types.Pointer:
+			extractTypes(typ.Elem())
+		case *types.Slice:
+			extractTypes(typ.Elem())
+		case *types.Map:
+			extractTypes(typ.Key())
+			extractTypes(typ.Elem())
+		case *types.Signature:
+			// Extract from parameters and results
+			if typ.Params() != nil {
+				for i := 0; i < typ.Params().Len(); i++ {
+					extractTypes(typ.Params().At(i).Type())
+				}
+			}
+			if typ.Results() != nil {
+				for i := 0; i < typ.Results().Len(); i++ {
+					extractTypes(typ.Results().At(i).Type())
+				}
+			}
+		}
+	}
+
+	// Walk through all expressions in the package and extract their types
+	if pkg.TypesInfo != nil {
+		for expr, typeAndValue := range pkg.TypesInfo.Types {
+			_ = expr // we don't need the expression itself
+			extractTypes(typeAndValue.Type)
+		}
+	}
+
+	// Convert dependencies to Field entries (abuse Fields to store dependencies)
+	for dep := range depSet {
+		parts := strings.Split(dep, ".")
+		if len(parts) == 2 {
+			component.Fields = append(component.Fields, Field{
+				Name:     parts[1], // Type name (e.g., "Parser")
+				TypeName: parts[1], // Same as name
+			})
+		}
+	}
+
+	return &component
 }

@@ -46,6 +46,7 @@ type ComponentDescriptions struct {
 	Cache      string
 	Gateway    string
 	Middleware string
+	Entrypoint string // Application entry point (main package)
 	Unknown    string // Template: will be formatted with package name
 }
 
@@ -59,9 +60,10 @@ type TechnologyInference struct {
 // VisualStyling controls diagram appearance.
 type VisualStyling struct {
 	// PlantUML-specific styling
-	HubTag     string // PlantUML tag definition for hub components
-	CentralTag string // PlantUML tag definition for central components
-	LeafTag    string // PlantUML tag definition for leaf components
+	HubTag        string // PlantUML tag definition for hub components
+	CentralTag    string // PlantUML tag definition for central components
+	LeafTag       string // PlantUML tag definition for leaf components
+	EntrypointTag string // PlantUML tag definition for entrypoint components (main)
 
 	// D3-specific styling
 	D3 D3Styling
@@ -123,6 +125,7 @@ func New() *Config {
 			Cache:      "Caching layer",
 			Gateway:    "External gateway",
 			Middleware: "Middleware component",
+			Entrypoint: "Application entry point",
 			Unknown:    "%s component", // Will be formatted with package name
 		},
 
@@ -143,14 +146,16 @@ func New() *Config {
 				"CACHE":      "Cache",
 				"GATEWAY":    "External System",
 				"MIDDLEWARE": "HTTP Middleware",
+				"ENTRYPOINT": "CLI",
 				"COMPONENT":  "Go",
 			},
 		},
 
 		Styling: VisualStyling{
-			HubTag:     `AddComponentTag("hub", $borderThickness="5", $fontColor="#000000", $borderColor="darkBlue")`,
-			CentralTag: `AddComponentTag("central", $borderThickness="3", $fontColor="#000000", $borderColor="darkBlue")`,
-			LeafTag:    `AddComponentTag("leaf", $borderThickness="1")`,
+			HubTag:        `AddComponentTag("hub", $borderThickness="5", $fontColor="#000000", $borderColor="darkBlue")`,
+			CentralTag:    `AddComponentTag("central", $borderThickness="3", $fontColor="#000000", $borderColor="darkBlue")`,
+			LeafTag:       `AddComponentTag("leaf", $borderThickness="1")`,
+			EntrypointTag: `AddComponentTag("entrypoint", $shape="RoundedBoxShape()", $bgColor="red", $fontColor="white", $borderColor="darkred", $borderThickness="3")`,
 			D3: D3Styling{
 				PackageColors: []string{
 					"#4285f4", // Blue
@@ -184,10 +189,10 @@ func New() *Config {
 					"#b2ff59", // Neon Green
 					"#ff6e40", // Coral
 				},
-				LinkDistance:      80,   // Shorter links keep connected components closer
-				ChargeStrength:    -150, // Reduced repulsion to compact the graph
-				CollisionPadding:  3,    // Tighter spacing between nodes
-				CenteringStrength: 0.03, // Weak gravity toward center to contain orphans
+				LinkDistance:      150,  // Longer links to spread nodes out
+				ChargeStrength:    -800, // Strong repulsion to prevent overlap
+				CollisionPadding:  15,   // More spacing between nodes
+				CenteringStrength: 0.05, // Stronger gravity toward center
 				BaseNodeSize:      10,
 				SizeScaleFactor:   2,
 				ArrowMarkerSize:   6,

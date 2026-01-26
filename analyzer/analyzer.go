@@ -20,6 +20,7 @@ const (
 	TypeCache      ComponentType = "CACHE"
 	TypeGateway    ComponentType = "GATEWAY"
 	TypeMiddleware ComponentType = "MIDDLEWARE"
+	TypeEntrypoint ComponentType = "ENTRYPOINT" // AIDEV-NOTE: main-package-type; represents application entry points
 	TypeUnknown    ComponentType = "COMPONENT"
 )
 
@@ -103,6 +104,11 @@ func (a *Analyzer) Analyze(components []parser.Component) []AnalyzedComponent {
 
 // classifyComponent determines the component type based on naming patterns
 func (a *Analyzer) classifyComponent(comp parser.Component) ComponentType {
+	// Check for entrypoint first (main package)
+	if comp.Kind == "entrypoint" || comp.PackageName == "main" {
+		return TypeEntrypoint
+	}
+
 	patterns := &a.config.Patterns
 
 	// Check patterns in order - first match wins

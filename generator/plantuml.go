@@ -83,12 +83,13 @@ func (g *PlantUMLGenerator) Generate(components []analyzer.AnalyzedComponent, w 
 }
 
 // writeStyleTags defines custom C4 tags for visual hierarchy
-// AIDEV-NOTE: visual-hierarchy; defines tags for hub/central/leaf components
+// AIDEV-NOTE: visual-hierarchy; defines tags for hub/central/leaf/entrypoint components
 func (g *PlantUMLGenerator) writeStyleTags(w io.Writer) error {
 	tags := []string{
 		g.config.Styling.HubTag,
 		g.config.Styling.CentralTag,
 		g.config.Styling.LeafTag,
+		g.config.Styling.EntrypointTag,
 	}
 
 	for _, tag := range tags {
@@ -109,15 +110,19 @@ func (g *PlantUMLGenerator) writeComponent(comp analyzer.AnalyzedComponent, w io
 	componentID := sanitizeID(comp.Component.Name)
 	description := g.generateDescription(comp)
 
-	// Determine tag based on role
+	// Determine tag - ENTRYPOINT takes precedence over role-based tags
 	tag := ""
-	switch comp.Role {
-	case analyzer.RoleHub:
-		tag = "$tags=\"hub\""
-	case analyzer.RoleCentral:
-		tag = "$tags=\"central\""
-	case analyzer.RoleLeaf:
-		tag = "$tags=\"leaf\""
+	if comp.Type == analyzer.TypeEntrypoint {
+		tag = "$tags=\"entrypoint\""
+	} else {
+		switch comp.Role {
+		case analyzer.RoleHub:
+			tag = "$tags=\"hub\""
+		case analyzer.RoleCentral:
+			tag = "$tags=\"central\""
+		case analyzer.RoleLeaf:
+			tag = "$tags=\"leaf\""
+		}
 	}
 
 	// Use Component macro from C4-PlantUML
@@ -165,6 +170,8 @@ func (g *PlantUMLGenerator) generateDescription(comp analyzer.AnalyzedComponent)
 		return desc.Gateway
 	case analyzer.TypeMiddleware:
 		return desc.Middleware
+	case analyzer.TypeEntrypoint:
+		return desc.Entrypoint
 	default:
 		pkgName := comp.Component.PackageName
 		if pkgName == "" {

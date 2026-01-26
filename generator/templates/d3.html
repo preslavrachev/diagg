@@ -229,7 +229,20 @@
 
         // Build dynamic legend
         const legend = d3.select("#legend");
-        packages.forEach((pkg, i) => {
+
+        // Add ENTRYPOINT first if it exists
+        const hasEntrypoint = data.nodes.some(n => n.type === "ENTRYPOINT");
+        if (hasEntrypoint) {
+            const item = legend.append("div").attr("class", "legend-item");
+            item.append("div")
+                .attr("class", "legend-color")
+                .style("background", "#dc3545")
+                .style("border-radius", "2px");
+            item.append("span").text("entrypoint").style("font-weight", "bold");
+        }
+
+        // Add package colors
+        packages.filter(pkg => pkg !== "main").forEach((pkg, i) => {
             const item = legend.append("div").attr("class", "legend-item");
             item.append("div")
                 .attr("class", "legend-color")
@@ -368,13 +381,32 @@
                 .on("drag", dragged)
                 .on("end", dragended));
 
-        node.append("circle")
+        // Render circles for normal components
+        node.filter(d => d.type !== "ENTRYPOINT")
+            .append("circle")
             .attr("r", d => d.size)
-            .attr("fill", d => colorScale(d.package));
+            .attr("fill", d => colorScale(d.package))
+            .attr("stroke", "#fff")
+            .attr("stroke-width", 2);
+
+        // Render rectangles for ENTRYPOINT components
+        node.filter(d => d.type === "ENTRYPOINT")
+            .append("rect")
+            .attr("width", d => d.size * 2.5)
+            .attr("height", d => d.size * 2.5)
+            .attr("x", d => -d.size * 1.25)
+            .attr("y", d => -d.size * 1.25)
+            .attr("rx", 6)
+            .attr("ry", 6)
+            .attr("fill", "#dc3545")
+            .attr("stroke", "#8b0000")
+            .attr("stroke-width", 4);
 
         node.append("text")
             .text(d => d.name)
-            .attr("dy", d => d.size + 15);
+            .attr("dy", d => d.type === "ENTRYPOINT" ? d.size * 1.5 + 15 : d.size + 15)
+            .attr("font-weight", d => d.type === "ENTRYPOINT" ? "bold" : "normal")
+            .attr("font-size", d => d.type === "ENTRYPOINT" ? "14px" : "12px");
 
         // Add tooltips
         node.append("title")
@@ -394,13 +426,15 @@ Role: ${d.role}`);
                 const dy = d.target.y - d.source.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
 
-                // Stop at source node edge
-                const sourceX = d.source.x + (dx / dist) * d.source.size;
-                const sourceY = d.source.y + (dy / dist) * d.source.size;
+                // Calculate source edge (rectangles are larger)
+                const sourceRadius = d.source.type === "ENTRYPOINT" ? d.source.size * 1.77 : d.source.size;
+                const sourceX = d.source.x + (dx / dist) * sourceRadius;
+                const sourceY = d.source.y + (dy / dist) * sourceRadius;
 
-                // Stop at target node edge (with space for arrow)
-                const targetX = d.target.x - (dx / dist) * (d.target.size + {{.ArrowHeadDistance}});
-                const targetY = d.target.y - (dy / dist) * (d.target.size + {{.ArrowHeadDistance}});
+                // Calculate target edge (rectangles are larger)
+                const targetRadius = d.target.type === "ENTRYPOINT" ? d.target.size * 1.77 : d.target.size;
+                const targetX = d.target.x - (dx / dist) * (targetRadius + {{.ArrowHeadDistance}});
+                const targetY = d.target.y - (dy / dist) * (targetRadius + {{.ArrowHeadDistance}});
 
                 d3.select(this)
                     .attr("x1", sourceX)
