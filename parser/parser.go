@@ -227,8 +227,9 @@ func extractPackagePath(filePath string) string {
 
 // PackageTypeInfo contains type information for analyzing interfaces
 type PackageTypeInfo struct {
-	Packages map[string]*types.Package // Package name -> package
-	TypeInfo *types.Info               // Combined type information
+	Packages       map[string]*types.Package    // Package name -> package
+	TypeInfo       *types.Info                  // Combined type information
+	LoadedPackages map[string]*packages.Package // AIDEV-NOTE: function-body-analysis; full package info with AST for extracting type usage from function bodies
 }
 
 // ParseDirectoryWithTypes parses a directory using go/packages for full type information
@@ -256,7 +257,8 @@ func (p *Parser) ParseDirectoryWithTypes(root string) ([]Component, *PackageType
 
 	var components []Component
 	pkgTypeInfo := &PackageTypeInfo{
-		Packages: make(map[string]*types.Package),
+		Packages:       make(map[string]*types.Package),
+		LoadedPackages: make(map[string]*packages.Package),
 	}
 
 	for _, pkg := range pkgs {
@@ -266,6 +268,8 @@ func (p *Parser) ParseDirectoryWithTypes(root string) ([]Component, *PackageType
 
 		// Store package for interface checking
 		pkgTypeInfo.Packages[pkg.Name] = pkg.Types
+		// Store full package for function body analysis
+		pkgTypeInfo.LoadedPackages[pkg.Name] = pkg
 
 		// Store type info from first package
 		if pkgTypeInfo.TypeInfo == nil {

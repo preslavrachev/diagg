@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"go/ast"
 	"go/types"
 	"strings"
 
@@ -197,7 +198,7 @@ func (a *Analyzer) extractDependencies(
 }
 
 // AnalyzeWithTypes performs analysis using type information from go/packages
-// This enables detection of interface implementations
+// This enables detection of interface implementations and function body type usage
 func (a *Analyzer) AnalyzeWithTypes(
 	components []parser.Component,
 	pkgTypeInfo *parser.PackageTypeInfo,
@@ -230,12 +231,13 @@ func (a *Analyzer) AnalyzeWithTypes(
 		}
 	}
 
-	// Second pass: extract dependencies
+	// Second pass: extract dependencies (including function body analysis)
 	for i := range analyzed {
 		analyzed[i].Dependencies = a.extractDependenciesWithTypes(
 			analyzed[i].Component,
 			componentMap,
 			typeMap,
+			pkgTypeInfo,
 		)
 	}
 
@@ -273,11 +275,12 @@ func (a *Analyzer) AnalyzeWithTypes(
 }
 
 // extractDependenciesWithTypes extracts dependencies using type information
-// AIDEV-NOTE: method-deps; extracts dependencies from struct fields, method parameters, and return types
+// AIDEV-NOTE: method-deps; extracts dependencies from struct fields, method parameters, return types, and function bodies
 func (a *Analyzer) extractDependenciesWithTypes(
 	comp parser.Component,
 	componentMap map[string]*AnalyzedComponent,
 	typeMap map[string]types.Type,
+	pkgTypeInfo *parser.PackageTypeInfo,
 ) []Dependency {
 	var deps []Dependency
 	seen := make(map[string]bool)
@@ -329,5 +332,142 @@ func (a *Analyzer) extractDependenciesWithTypes(
 		}
 	}
 
+	// AIDEV-NOTE: function-body-analysis; extract type usage from function bodies (local vars, function calls)
+	if pkg, ok := pkgTypeInfo.LoadedPackages[comp.PackageName]; ok {
+		// Walk all function declarations in this package and find methods for this type
+		for _, syntax := range pkg.Syntax {
+			ast.Inspect(syntax, func(n ast.Node) bool {
+				funcDecl, ok := n.(*ast.FuncDecl)
+				if !ok {
+					return true
+				}
+
+				// Check if this is a method on our component type
+				isMethodOfComp := false
+				if funcDecl.Recv != nil {
+					for _, recv := range funcDecl.Recv.List {
+						recvTypeName := extractReceiverTypeName(recv.Type)
+						if recvTypeName == comp.Name {
+							isMethodOfComp = true
+							break
+						}
+					}
+				}
+
+				// Only analyze methods belonging to this component
+				if !isMethodOfComp {
+					return true
+				}
+
+				// Walk the function body and extract type usage
+				// AIDEV-NOTE: type-info-lookup; use package-specific TypesInfo for accurate type resolution
+				if funcDecl.Body != nil && pkg.TypesInfo != nil {
+					ast.Inspect(funcDecl.Body, func(bodyNode ast.Node) bool {
+						// Look for composite literals (e.g., MyType{}, &MyType{})
+						if compLit, ok := bodyNode.(*ast.CompositeLit); ok {
+							if typeInfo, hasType := pkg.TypesInfo.Types[compLit]; hasType {
+								addDepFromType(typeInfo.Type, addDep)
+							}
+						}
+
+						// Look for function calls and check their return types
+						// AIDEV-NOTE: constructor-detection; catches markdown.NewStreamingParser() by return type
+						if callExpr, ok := bodyNode.(*ast.CallExpr); ok {
+							if typeInfo, hasType := pkg.TypesInfo.Types[callExpr]; hasType {
+								addDepFromType(typeInfo.Type, addDep)
+							}
+						}
+
+						// Look for type assertions (e.g., x.(MyType))
+						if typeAssert, ok := bodyNode.(*ast.TypeAssertExpr); ok {
+							if typeInfo, hasType := pkg.TypesInfo.Types[typeAssert.Type]; hasType {
+								addDepFromType(typeInfo.Type, addDep)
+							}
+						}
+
+						// Look for variable declarations with explicit types
+						if valSpec, ok := bodyNode.(*ast.ValueSpec); ok {
+							if valSpec.Type != nil {
+								if typeInfo, hasType := pkg.TypesInfo.Types[valSpec.Type]; hasType {
+									addDepFromType(typeInfo.Type, addDep)
+								}
+							}
+						}
+
+						return true
+					})
+				}
+
+				return true
+			})
+		}
+	}
+
 	return deps
+}
+
+// extractReceiverTypeName extracts type name from receiver (handles *T and T)
+func extractReceiverTypeName(expr ast.Expr) string {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.StarExpr:
+		if ident, ok := t.X.(*ast.Ident); ok {
+			return ident.Name
+		}
+	}
+	return ""
+}
+
+// addDepFromType extracts type name from types.Type and calls addDep
+// AIDEV-NOTE: stdlib-filter; filters out standard library types to avoid noise
+func addDepFromType(t types.Type, addDep func(string)) {
+	if t == nil {
+		return
+	}
+
+	// Unwrap pointers and slices
+	for {
+		switch typ := t.(type) {
+		case *types.Pointer:
+			t = typ.Elem()
+		case *types.Slice:
+			t = typ.Elem()
+		default:
+			goto done
+		}
+	}
+done:
+
+	// Extract named types
+	if named, ok := t.(*types.Named); ok {
+		obj := named.Obj()
+		if obj == nil {
+			return
+		}
+
+		// Filter out standard library types
+		pkg := obj.Pkg()
+		if pkg == nil {
+			// Built-in types (int, string, error, etc.)
+			return
+		}
+
+		// AIDEV-NOTE: stdlib-filter; skip stdlib packages
+		// Stdlib packages don't have dots AND don't have slashes (e.g., "fmt", "errors")
+		// Or they start with known stdlib prefixes (e.g., "golang.org/x/")
+		pkgPath := pkg.Path()
+		if !strings.Contains(pkgPath, "/") && !strings.Contains(pkgPath, ".") {
+			// Standard library package without subdirs (e.g., "fmt", "context", "errors")
+			return
+		}
+		if strings.HasPrefix(pkgPath, "golang.org/x/") {
+			// Extended stdlib (e.g., "golang.org/x/sync")
+			return
+		}
+
+		// Add dependency with package prefix
+		typeName := pkg.Name() + "." + obj.Name()
+		addDep(typeName)
+	}
 }
