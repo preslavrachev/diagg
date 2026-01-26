@@ -9,15 +9,18 @@ By pointing this CLI at a Go project, it recursively parses Go source files, ext
 The tool follows a three-stage pipeline:
 
 1. **Parser** (`parser/`) - Uses `golang.org/x/tools/go/packages` to load Go packages with full type information, extracting structs, interfaces, and their relationships
-2. **Analyzer** (`analyzer/`) - Classifies components based on naming patterns (e.g., `*Service`, `*Repository`, `*Handler`), identifies dependencies from struct fields and method signatures (parameters and return types), and detects interface implementations
-3. **Generator** (`generator/`) - Renders PlantUML C4 component diagrams with proper relationships (solid lines for dependencies, dotted lines for interface implementations)
+2. **Analyzer** (`analyzer/`) - Classifies components based on naming patterns (e.g., `*Service`, `*Repository`, `*Handler`), identifies dependencies from struct fields, method signatures (parameters and return types), and function body type usage, and detects interface implementations
+3. **Generator** (`generator/`) - Renders diagrams in multiple formats:
+   - PlantUML C4 component diagrams with proper relationships (solid lines for dependencies, dotted lines for interface implementations)
+   - D3.js force-directed interactive graphs with package clustering
 
 ## Package Structure
 
 - `cmd/diagg/` - CLI entry point using urfave/cli
 - `parser/` - Go package loader with type information support
-- `analyzer/` - Component type inference, dependency extraction, and interface implementation detection
-- `generator/` - PlantUML C4 diagram generator
+- `analyzer/` - Component type inference, dependency extraction (including function body analysis), and interface implementation detection
+- `generator/` - Diagram generators (PlantUML C4, D3.js force-directed)
+- `config/` - Configuration system for component patterns, styling, and technology inference
 
 No `internal/` or `pkg/` directories - packages are reasonably named and organized at the root level.
 
@@ -63,8 +66,12 @@ The analyzer detects dependencies from multiple sources:
 - **Struct fields** - Direct composition/aggregation relationships
 - **Method parameters** - Dependencies passed into behavior
 - **Method return types** - Dependencies produced by behavior
+- **Function body type usage** - Local variables, constructor calls, type assertions (added 2026-01)
+  - Detects dependencies from patterns like `parser := markdown.NewStreamingParser()`
+  - Analyzes return types of function calls rather than just searching for "NewXXX" patterns
+  - Filters out standard library types to reduce noise
 
-This ensures that components like `PlantUMLGenerator` correctly show dependencies on `AnalyzedComponent` (via method parameters) even when they don't store them as fields.
+This comprehensive detection ensures accurate dependency graphs even when types are instantiated locally within functions rather than stored as fields.
 
 ## Connectivity Metrics
 
@@ -80,14 +87,31 @@ The analyzer includes a metrics system ([analyzer/metrics.go](analyzer/metrics.g
 
 These metrics drive visual hierarchy in the generated diagrams - hubs are positioned centrally, leaves at the periphery.
 
+## Output Formats
+
+The tool supports multiple output formats via the generator interface:
+
+1. **PlantUML C4** (default) - `diagram.puml`
+   - C4 component diagram with package boundaries
+   - Visual hierarchy based on connectivity metrics
+   - Solid lines for dependencies, dotted for interface implementations
+
+2. **D3.js** - `diagram-d3.html`
+   - Interactive force-directed graph
+   - Package clustering with translucent hulls
+   - Draggable nodes, zoom/pan support
+
+See [generator/plantuml.go](generator/plantuml.go) and [generator/d3.go](generator/d3.go) for implementation details.
+
 ## Development Notes
 
 - **AIDEV anchors** - Used throughout for AI-assisted development. Grep for `AIDEV-NOTE:`, `AIDEV-TODO:`, or `AIDEV-QUESTION:`
-  - Key anchors: `graph-metrics`, `method-deps`, `method-extraction`, `test-cross-pkg-deps`, `visual-hierarchy`
+  - Key anchors: `graph-metrics`, `method-deps`, `function-body-analysis`, `stdlib-filter`, `visual-hierarchy`
 - **Testing strategy** - TDD approach with comprehensive test coverage:
   - Cross-package dependency detection ([analyzer_test.go:14](analyzer/analyzer_test.go#L14))
   - Interface implementation detection ([analyzer_test.go:70](analyzer/analyzer_test.go#L70))
   - Method parameter dependency detection ([analyzer_test.go:154](analyzer/analyzer_test.go#L154))
-- **Tests use table-driven patterns** with well-named constants
+  - Function body dependency extraction - BDD-style tests ([function_body_deps_test.go](analyzer/function_body_deps_test.go))
+- **Tests use table-driven patterns** with well-named constants for unit tests, BDD-style Given-When-Then for behavioral tests
 - **Error handling** uses `fmt.Errorf("context: %w", err)` for proper error chains
 - **Example output**: [diagram.puml](diagram.puml) shows the tool's own component structure
