@@ -8,29 +8,6 @@ AddComponentTag("entrypoint", $shape="RoundedBoxShape()", $bgColor="red", $fontC
 
 title Component Diagram - diagg
 
-Container_Boundary(parser_boundary, "parser") {
-Component(Component, "Component", "Go", "parser component")
-Component(PackageTypeInfo, "PackageTypeInfo", "Go", "parser component")
-Component(Field, "Field", "Go", "parser component")
-Component(Method, "Method", "Go", "parser component")
-Component(InterfaceMethod, "InterfaceMethod", "Go", "parser component")
-Component(Parser, "Parser", "Go", "parser component", $tags="leaf")
-}
-
-Container_Boundary(generator_boundary, "generator") {
-Component(d3Graph, "d3Graph", "Go", "generator component")
-Component(Generator, "Generator", "Go", "generator component")
-Component(d3Node, "d3Node", "Go", "generator component")
-Component(d3Link, "d3Link", "Go", "generator component")
-Component(templateData, "templateData", "Go", "generator component")
-Component(PlantUMLGenerator, "PlantUMLGenerator", "Go", "generator component", $tags="leaf")
-Component(D3Generator, "D3Generator", "Go", "generator component", $tags="leaf")
-}
-
-Container_Boundary(main_boundary, "main") {
-Component(Main, "Main", "CLI", "Application entry point", $tags="entrypoint")
-}
-
 Container_Boundary(analyzer_boundary, "analyzer") {
 Component(ComponentType, "ComponentType", "Go", "analyzer component", $tags="hub")
 Component(AnalyzedComponent, "AnalyzedComponent", "Go", "analyzer component", $tags="central")
@@ -45,10 +22,33 @@ Container_Boundary(config_boundary, "config") {
 Component(Config, "Config", "Go", "config component", $tags="central")
 Component(DefaultValues, "DefaultValues", "Go", "config component")
 Component(VisualStyling, "VisualStyling", "Go", "config component")
-Component(D3Styling, "D3Styling", "Go", "config component")
-Component(ComponentDescriptions, "ComponentDescriptions", "Go", "config component")
 Component(TechnologyInference, "TechnologyInference", "Go", "config component")
 Component(ComponentPatterns, "ComponentPatterns", "Go", "config component")
+Component(D3Styling, "D3Styling", "Go", "config component")
+Component(ComponentDescriptions, "ComponentDescriptions", "Go", "config component")
+}
+
+Container_Boundary(parser_boundary, "parser") {
+Component(Component, "Component", "Go", "parser component")
+Component(PackageTypeInfo, "PackageTypeInfo", "Go", "parser component")
+Component(Method, "Method", "Go", "parser component")
+Component(Field, "Field", "Go", "parser component")
+Component(InterfaceMethod, "InterfaceMethod", "Go", "parser component")
+Component(Parser, "Parser", "Go", "parser component", $tags="leaf")
+}
+
+Container_Boundary(generator_boundary, "generator") {
+Component(d3Graph, "d3Graph", "Go", "generator component")
+Component(Generator, "Generator", "Go", "generator component")
+Component(d3Node, "d3Node", "Go", "generator component")
+Component(d3Link, "d3Link", "Go", "generator component")
+Component(templateData, "templateData", "Go", "generator component")
+Component(D3Generator, "D3Generator", "Go", "generator component", $tags="leaf")
+Component(PlantUMLGenerator, "PlantUMLGenerator", "Go", "generator component", $tags="leaf")
+}
+
+Container_Boundary(main_boundary, "main") {
+Component(diagg, "diagg", "CLI", "Application entry point", $tags="entrypoint")
 }
 
 
@@ -77,9 +77,14 @@ Rel_D(Analyzer, AnalyzedComponent, "uses")
 Rel_D(Analyzer, ComponentType, "uses")
 Rel_D(Analyzer, Dependency, "uses")
 Rel_D(Analyzer, PackageTypeInfo, "uses")
+Rel_D(Analyzer, ComponentRole, "uses")
+Rel_D(Analyzer, InterfaceImplementation, "uses")
 Rel_D(D3Generator, Config, "uses")
 Rel_D(D3Generator, AnalyzedComponent, "uses")
 Rel_D(D3Generator, d3Graph, "uses")
+Rel_D(D3Generator, d3Node, "uses")
+Rel_D(D3Generator, d3Link, "uses")
+Rel_D(D3Generator, templateData, "uses")
 Rel_Back(Generator, D3Generator, "implements")
 Rel(d3Graph, d3Node, "uses")
 Rel(d3Graph, d3Link, "uses")
@@ -89,16 +94,16 @@ Rel_D(PlantUMLGenerator, ComponentRole, "uses")
 Rel_D(PlantUMLGenerator, Dependency, "uses")
 Rel_D(PlantUMLGenerator, ComponentType, "uses")
 Rel_Back(Generator, PlantUMLGenerator, "implements")
-Rel_D(Main, PlantUMLGenerator, "uses")
-Rel_D(Main, Config, "uses")
-Rel_D(Main, Generator, "uses")
-Rel_D(Main, Parser, "uses")
-Rel_D(Main, Analyzer, "uses")
-Rel_D(Main, PackageTypeInfo, "uses")
-Rel_D(Main, DefaultValues, "uses")
-Rel_D(Main, Component, "uses")
-Rel_D(Main, D3Generator, "uses")
-Rel_D(Main, ComponentType, "uses")
-Rel_D(Main, AnalyzedComponent, "uses")
+Rel_D(diagg, ComponentType, "uses")
+Rel_D(diagg, Generator, "uses")
+Rel_D(diagg, PackageTypeInfo, "uses")
+Rel_D(diagg, Parser, "uses")
+Rel_D(diagg, Config, "uses")
+Rel_D(diagg, Analyzer, "uses")
+Rel_D(diagg, DefaultValues, "uses")
+Rel_D(diagg, PlantUMLGenerator, "uses")
+Rel_D(diagg, AnalyzedComponent, "uses")
+Rel_D(diagg, D3Generator, "uses")
+Rel_D(diagg, Component, "uses")
 
 @enduml
