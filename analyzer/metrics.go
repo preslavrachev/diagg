@@ -24,7 +24,8 @@ func CalculateMetrics(components []AnalyzedComponent) map[string]*ComponentMetri
 
 	// Initialize metrics for all components
 	for _, comp := range components {
-		metrics[comp.Component.Name] = &ComponentMetrics{
+		qn := comp.QualifiedName()
+		metrics[qn] = &ComponentMetrics{
 			InDegree:  0,
 			OutDegree: 0,
 		}
@@ -32,26 +33,28 @@ func CalculateMetrics(components []AnalyzedComponent) map[string]*ComponentMetri
 
 	// Count dependencies
 	for _, comp := range components {
-		sourceName := comp.Component.Name
+		sourceQN := comp.QualifiedName()
 
 		// Each dependency increases source's out-degree and target's in-degree
 		for _, dep := range comp.Dependencies {
-			if sourceMetrics, ok := metrics[sourceName]; ok {
+			if sourceMetrics, ok := metrics[sourceQN]; ok {
 				sourceMetrics.OutDegree++
 			}
 
-			if targetMetrics, ok := metrics[dep.TargetName]; ok {
+			targetQN := dep.QualifiedTarget()
+			if targetMetrics, ok := metrics[targetQN]; ok {
 				targetMetrics.InDegree++
 			}
 		}
 
 		// Interface implementations also contribute to connectivity
 		for _, impl := range comp.Implements {
-			if sourceMetrics, ok := metrics[sourceName]; ok {
+			if sourceMetrics, ok := metrics[sourceQN]; ok {
 				sourceMetrics.OutDegree++ // Implementing an interface is a form of dependency
 			}
 
-			if targetMetrics, ok := metrics[impl.InterfaceName]; ok {
+			ifaceQN := qualifiedName(impl.InterfacePackage, impl.InterfaceName)
+			if targetMetrics, ok := metrics[ifaceQN]; ok {
 				targetMetrics.InDegree++
 			}
 		}

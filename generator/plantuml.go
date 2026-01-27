@@ -107,7 +107,7 @@ func (g *PlantUMLGenerator) writeStyleTags(w io.Writer) error {
 
 // writeComponent writes a single component in C4 PlantUML format
 func (g *PlantUMLGenerator) writeComponent(comp analyzer.AnalyzedComponent, w io.Writer) error {
-	componentID := sanitizeID(comp.Component.Name)
+	componentID := sanitizeID(comp.QualifiedName())
 	description := g.generateDescription(comp)
 
 	// Determine tag - ENTRYPOINT takes precedence over role-based tags
@@ -184,11 +184,11 @@ func (g *PlantUMLGenerator) generateDescription(comp analyzer.AnalyzedComponent)
 // writeRelationships writes the relationships (dependencies) for a component
 // AIDEV-NOTE: directional-hints; uses Rel_D/Rel_U based on component roles for better layout
 func (g *PlantUMLGenerator) writeRelationships(comp analyzer.AnalyzedComponent, w io.Writer) error {
-	sourceID := sanitizeID(comp.Component.Name)
+	sourceID := sanitizeID(comp.QualifiedName())
 
 	// Write dependency relationships with directional hints
 	for _, dep := range comp.Dependencies {
-		targetID := sanitizeID(dep.TargetName)
+		targetID := sanitizeID(dep.QualifiedTarget())
 
 		// Choose relationship direction based on roles
 		relFunc := g.chooseRelationshipDirection(comp.Role, dep)
@@ -205,7 +205,7 @@ func (g *PlantUMLGenerator) writeRelationships(comp analyzer.AnalyzedComponent, 
 
 	// Write interface implementation relationships (dotted lines)
 	for _, impl := range comp.Implements {
-		targetID := sanitizeID(impl.InterfaceName)
+		targetID := sanitizeID(impl.InterfacePackage + "." + impl.InterfaceName)
 
 		// Use Rel_Back for dotted lines (C4-PlantUML convention)
 		// Rel_Back renders as a dotted/dashed line going backwards

@@ -18,87 +18,87 @@ func TestCalculateMetrics(t *testing.T) {
 			name: "simple dependency chain",
 			components: []AnalyzedComponent{
 				{
-					Component: parser.Component{Name: "HandlerA"},
+					Component: parser.Component{Name: "HandlerA", PackageName: "handler"},
 					Dependencies: []Dependency{
-						{TargetName: "ServiceB"},
+						{TargetName: "ServiceB", TargetPackage: "service"},
 					},
 				},
 				{
-					Component: parser.Component{Name: "ServiceB"},
+					Component: parser.Component{Name: "ServiceB", PackageName: "service"},
 					Dependencies: []Dependency{
-						{TargetName: "RepositoryC"},
+						{TargetName: "RepositoryC", TargetPackage: "repo"},
 					},
 				},
 				{
-					Component:    parser.Component{Name: "RepositoryC"},
+					Component:    parser.Component{Name: "RepositoryC", PackageName: "repo"},
 					Dependencies: []Dependency{},
 				},
 			},
 			want: map[string]ComponentMetrics{
-				"HandlerA":    {InDegree: 0, OutDegree: 1, TotalDegree: 1},
-				"ServiceB":    {InDegree: 1, OutDegree: 1, TotalDegree: 2},
-				"RepositoryC": {InDegree: 1, OutDegree: 0, TotalDegree: 1},
+				"handler.HandlerA": {InDegree: 0, OutDegree: 1, TotalDegree: 1},
+				"service.ServiceB": {InDegree: 1, OutDegree: 1, TotalDegree: 2},
+				"repo.RepositoryC": {InDegree: 1, OutDegree: 0, TotalDegree: 1},
 			},
 		},
 		{
 			name: "hub component with multiple dependencies",
 			components: []AnalyzedComponent{
 				{
-					Component: parser.Component{Name: "UserService"},
+					Component: parser.Component{Name: "UserService", PackageName: "svc"},
 					Dependencies: []Dependency{
-						{TargetName: "UserRepo"},
-						{TargetName: "CacheService"},
+						{TargetName: "UserRepo", TargetPackage: "repo"},
+						{TargetName: "CacheService", TargetPackage: "cache"},
 					},
 				},
 				{
-					Component: parser.Component{Name: "OrderService"},
+					Component: parser.Component{Name: "OrderService", PackageName: "svc"},
 					Dependencies: []Dependency{
-						{TargetName: "UserService"},
-						{TargetName: "OrderRepo"},
+						{TargetName: "UserService", TargetPackage: "svc"},
+						{TargetName: "OrderRepo", TargetPackage: "repo"},
 					},
 				},
 				{
-					Component: parser.Component{Name: "PaymentService"},
+					Component: parser.Component{Name: "PaymentService", PackageName: "svc"},
 					Dependencies: []Dependency{
-						{TargetName: "UserService"},
+						{TargetName: "UserService", TargetPackage: "svc"},
 					},
 				},
 				{
-					Component: parser.Component{Name: "UserRepo"},
+					Component: parser.Component{Name: "UserRepo", PackageName: "repo"},
 				},
 				{
-					Component: parser.Component{Name: "OrderRepo"},
+					Component: parser.Component{Name: "OrderRepo", PackageName: "repo"},
 				},
 				{
-					Component: parser.Component{Name: "CacheService"},
+					Component: parser.Component{Name: "CacheService", PackageName: "cache"},
 				},
 			},
 			want: map[string]ComponentMetrics{
-				"UserService":    {InDegree: 2, OutDegree: 2, TotalDegree: 4}, // Hub: high in-degree
-				"OrderService":   {InDegree: 0, OutDegree: 2, TotalDegree: 2},
-				"PaymentService": {InDegree: 0, OutDegree: 1, TotalDegree: 1},
-				"UserRepo":       {InDegree: 1, OutDegree: 0, TotalDegree: 1},
-				"OrderRepo":      {InDegree: 1, OutDegree: 0, TotalDegree: 1},
-				"CacheService":   {InDegree: 1, OutDegree: 0, TotalDegree: 1},
+				"svc.UserService":    {InDegree: 2, OutDegree: 2, TotalDegree: 4},
+				"svc.OrderService":   {InDegree: 0, OutDegree: 2, TotalDegree: 2},
+				"svc.PaymentService": {InDegree: 0, OutDegree: 1, TotalDegree: 1},
+				"repo.UserRepo":      {InDegree: 1, OutDegree: 0, TotalDegree: 1},
+				"repo.OrderRepo":     {InDegree: 1, OutDegree: 0, TotalDegree: 1},
+				"cache.CacheService": {InDegree: 1, OutDegree: 0, TotalDegree: 1},
 			},
 		},
 		{
 			name: "interface implementations count as dependencies",
 			components: []AnalyzedComponent{
 				{
-					Component: parser.Component{Name: "PostgresRepo"},
+					Component: parser.Component{Name: "PostgresRepo", PackageName: "postgres"},
 					Implements: []InterfaceImplementation{
-						{InterfaceName: "UserRepository"},
+						{InterfaceName: "UserRepository", InterfacePackage: "domain"},
 					},
 				},
 				{
-					Component:   parser.Component{Name: "UserRepository"},
+					Component:   parser.Component{Name: "UserRepository", PackageName: "domain"},
 					IsInterface: true,
 				},
 			},
 			want: map[string]ComponentMetrics{
-				"PostgresRepo":   {InDegree: 0, OutDegree: 1, TotalDegree: 1},
-				"UserRepository": {InDegree: 1, OutDegree: 0, TotalDegree: 1},
+				"postgres.PostgresRepo": {InDegree: 0, OutDegree: 1, TotalDegree: 1},
+				"domain.UserRepository": {InDegree: 1, OutDegree: 0, TotalDegree: 1},
 			},
 		},
 	}

@@ -23,7 +23,7 @@ func TestD3Generator_Generate(t *testing.T) {
 			Type: analyzer.TypeService,
 			Role: analyzer.RoleHub,
 			Dependencies: []analyzer.Dependency{
-				{TargetName: "UserRepository", TargetType: analyzer.TypeRepository},
+				{TargetName: "UserRepository", TargetPackage: "repository", TargetType: analyzer.TypeRepository},
 			},
 			Metrics: &analyzer.ComponentMetrics{
 				InDegree:    2,
@@ -63,10 +63,10 @@ func TestD3Generator_Generate(t *testing.T) {
 		"<h1>Test Diagram</h1>",
 		"<svg id=\"graph\">",
 		"const data =",
-		"\"id\":\"UserService\"",
-		"\"id\":\"UserRepository\"",
-		"\"source\":\"UserService\"",
-		"\"target\":\"UserRepository\"",
+		"\"id\":\"service.UserService\"",
+		"\"id\":\"repository.UserRepository\"",
+		"\"source\":\"service.UserService\"",
+		"\"target\":\"repository.UserRepository\"",
 		"d3.forceSimulation",
 	}
 
@@ -133,7 +133,7 @@ func TestD3Generator_InterfaceImplementations(t *testing.T) {
 			Component: parser.Component{Name: "ConcreteService", PackageName: "service"},
 			Type:      analyzer.TypeService,
 			Implements: []analyzer.InterfaceImplementation{
-				{InterfaceName: "ServiceInterface"},
+				{InterfaceName: "ServiceInterface", InterfacePackage: "service"},
 			},
 		},
 		{
@@ -147,7 +147,7 @@ func TestD3Generator_InterfaceImplementations(t *testing.T) {
 	// Should have implementation link
 	foundImplementationLink := false
 	for _, link := range graph.Links {
-		if link.Source == "ConcreteService" && link.Target == "ServiceInterface" && link.Type == "implementation" {
+		if link.Source == "service.ConcreteService" && link.Target == "service.ServiceInterface" && link.Type == "implementation" {
 			foundImplementationLink = true
 			break
 		}

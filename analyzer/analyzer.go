@@ -39,15 +39,35 @@ type AnalyzedComponent struct {
 
 // Dependency represents a relationship between components
 type Dependency struct {
-	TargetName  string
-	TargetType  ComponentType
-	IsInterface bool // True if dependency is on an interface type
+	TargetName    string
+	TargetPackage string // Package of the target component
+	TargetType    ComponentType
+	IsInterface   bool // True if dependency is on an interface type
 }
 
 // InterfaceImplementation tracks which interfaces a component implements
 type InterfaceImplementation struct {
 	InterfaceName    string
 	InterfacePackage string
+}
+
+// qualifiedName returns a package-qualified identifier for map keys and cross-references.
+// AIDEV-NOTE: qualified-name; used everywhere to prevent name collisions across packages
+func qualifiedName(pkg, name string) string {
+	if pkg == "" {
+		return name
+	}
+	return pkg + "." + name
+}
+
+// QualifiedName returns the package-qualified name for this component.
+func (ac *AnalyzedComponent) QualifiedName() string {
+	return qualifiedName(ac.Component.PackageName, ac.Component.Name)
+}
+
+// QualifiedTarget returns the package-qualified name for this dependency target.
+func (d *Dependency) QualifiedTarget() string {
+	return qualifiedName(d.TargetPackage, d.TargetName)
 }
 
 // Analyzer infers component types and relationships.
@@ -80,10 +100,11 @@ func (a *Analyzer) Analyze(components []parser.Component) []AnalyzedComponent {
 			IsInterface: comp.Kind == "interface",
 		}
 		analyzed = append(analyzed, ac)
-		componentMap[comp.Name] = &analyzed[len(analyzed)-1]
+		qn := qualifiedName(comp.PackageName, comp.Name)
+		componentMap[qn] = &analyzed[len(analyzed)-1]
 
 		if ac.IsInterface {
-			interfaceMap[comp.Name] = &analyzed[len(analyzed)-1]
+			interfaceMap[qn] = &analyzed[len(analyzed)-1]
 		}
 	}
 
@@ -95,9 +116,9 @@ func (a *Analyzer) Analyze(components []parser.Component) []AnalyzedComponent {
 	// Third pass: calculate metrics and assign roles
 	metrics := CalculateMetrics(analyzed)
 	for i := range analyzed {
-		compName := analyzed[i].Component.Name
-		analyzed[i].Metrics = metrics[compName]
-		analyzed[i].Role = ClassifyRole(metrics[compName], len(analyzed))
+		qn := analyzed[i].QualifiedName()
+		analyzed[i].Metrics = metrics[qn]
+		analyzed[i].Role = ClassifyRole(metrics[qn], len(analyzed))
 	}
 
 	return analyzed
@@ -173,28 +194,65 @@ func (a *Analyzer) extractDependencies(
 	seen := make(map[string]bool)
 
 	for _, field := range comp.Fields {
-		// Extract the base type name (remove package prefix)
-		typeName := field.TypeName
-		if idx := strings.LastIndex(typeName, "."); idx >= 0 {
-			typeName = typeName[idx+1:]
+		target := a.lookupComponent(field.TypeName, componentMap)
+		if target == nil {
+			continue
 		}
 
-		// Check if this field references another component
-		if target, exists := componentMap[typeName]; exists {
-			// Avoid duplicates
-			if !seen[typeName] {
-				dep := Dependency{
-					TargetName:  typeName,
-					TargetType:  target.Type,
-					IsInterface: field.IsInterface || target.IsInterface,
-				}
-				deps = append(deps, dep)
-				seen[typeName] = true
+		qn := target.QualifiedName()
+		if !seen[qn] {
+			dep := Dependency{
+				TargetName:    target.Component.Name,
+				TargetPackage: target.Component.PackageName,
+				TargetType:    target.Type,
+				IsInterface:   field.IsInterface || target.IsInterface,
 			}
+			deps = append(deps, dep)
+			seen[qn] = true
 		}
 	}
 
 	return deps
+}
+
+// lookupComponent resolves a type name (possibly package-qualified like "pkgb.B")
+// to an AnalyzedComponent in the map keyed by qualifiedName.
+func (a *Analyzer) lookupComponent(typeName string, componentMap map[string]*AnalyzedComponent) *AnalyzedComponent {
+	// Strip pointer/slice prefixes
+	clean := strings.TrimPrefix(typeName, "*")
+	clean = strings.TrimPrefix(clean, "[]")
+
+	// Try direct qualified lookup (e.g. "pkgb.B" matches key "pkgb.B")
+	if target, ok := componentMap[clean]; ok {
+		return target
+	}
+
+	// Extract bare name and search all entries
+	bareName := clean
+	if idx := strings.LastIndex(clean, "."); idx >= 0 {
+		bareName = clean[idx+1:]
+	}
+
+	// If the field has a package prefix, try that specific qualified name
+	if bareName != clean {
+		// clean is already "pkg.Name", tried above
+		// Fall through to scan
+	}
+
+	// Scan for a unique match by bare name (backward compat for single-package cases)
+	var match *AnalyzedComponent
+	matches := 0
+	for _, comp := range componentMap {
+		if comp.Component.Name == bareName {
+			match = comp
+			matches++
+		}
+	}
+	if matches == 1 {
+		return match
+	}
+
+	return nil
 }
 
 // AnalyzeWithTypes performs analysis using type information from go/packages
@@ -218,14 +276,15 @@ func (a *Analyzer) AnalyzeWithTypes(
 			IsInterface: comp.Kind == "interface",
 		}
 		analyzed = append(analyzed, ac)
-		componentMap[comp.Name] = &analyzed[len(analyzed)-1]
+		qn := qualifiedName(comp.PackageName, comp.Name)
+		componentMap[qn] = &analyzed[len(analyzed)-1]
 
 		// Get the actual type from the appropriate package scope
 		if pkg, ok := pkgTypeInfo.Packages[comp.PackageName]; ok {
 			if obj := pkg.Scope().Lookup(comp.Name); obj != nil {
-				typeMap[comp.Name] = obj.Type()
+				typeMap[qn] = obj.Type()
 				if iface, ok := obj.Type().Underlying().(*types.Interface); ok {
-					interfaceMap[comp.Name] = iface
+					interfaceMap[qn] = iface
 				}
 			}
 		}
@@ -245,17 +304,24 @@ func (a *Analyzer) AnalyzeWithTypes(
 	for i := range analyzed {
 		if !analyzed[i].IsInterface {
 			// Check if this type implements any interface
-			typeName := analyzed[i].Component.Name
-			if concreteType, ok := typeMap[typeName]; ok {
+			qn := analyzed[i].QualifiedName()
+			if concreteType, ok := typeMap[qn]; ok {
 				// Need to check pointer receiver methods too
 				ptrType := types.NewPointer(concreteType)
 
-				for ifaceName, ifaceType := range interfaceMap {
+				for ifaceQN, ifaceType := range interfaceMap {
 					// Check both value and pointer receiver
 					if types.Implements(concreteType, ifaceType) || types.Implements(ptrType, ifaceType) {
+						// Extract package and name from the qualified key
+						ifacePkg := ""
+						ifaceName := ifaceQN
+						if idx := strings.LastIndex(ifaceQN, "."); idx >= 0 {
+							ifacePkg = ifaceQN[:idx]
+							ifaceName = ifaceQN[idx+1:]
+						}
 						analyzed[i].Implements = append(analyzed[i].Implements, InterfaceImplementation{
 							InterfaceName:    ifaceName,
-							InterfacePackage: analyzed[i].Component.PackageName,
+							InterfacePackage: ifacePkg,
 						})
 					}
 				}
@@ -266,9 +332,9 @@ func (a *Analyzer) AnalyzeWithTypes(
 	// Fourth pass: calculate metrics and assign roles
 	metrics := CalculateMetrics(analyzed)
 	for i := range analyzed {
-		compName := analyzed[i].Component.Name
-		analyzed[i].Metrics = metrics[compName]
-		analyzed[i].Role = ClassifyRole(metrics[compName], len(analyzed))
+		qn := analyzed[i].QualifiedName()
+		analyzed[i].Metrics = metrics[qn]
+		analyzed[i].Role = ClassifyRole(metrics[qn], len(analyzed))
 	}
 
 	return analyzed
@@ -287,31 +353,27 @@ func (a *Analyzer) extractDependenciesWithTypes(
 
 	// Helper to add a dependency if it references a known component
 	addDep := func(typeName string) {
-		// Extract the base type name (remove package prefix, pointers, slices)
-		baseName := typeName
-		baseName = strings.TrimPrefix(baseName, "*")
-		baseName = strings.TrimPrefix(baseName, "[]")
-		if idx := strings.LastIndex(baseName, "."); idx >= 0 {
-			baseName = baseName[idx+1:]
+		target := a.lookupComponent(typeName, componentMap)
+		if target == nil {
+			return
 		}
 
-		// Check if this references another component
-		if target, exists := componentMap[baseName]; exists {
-			if !seen[baseName] {
-				// Determine if it's an interface dependency
-				isInterface := false
-				if fieldType, ok := typeMap[baseName]; ok {
-					_, isInterface = fieldType.Underlying().(*types.Interface)
-				}
-
-				dep := Dependency{
-					TargetName:  baseName,
-					TargetType:  target.Type,
-					IsInterface: isInterface || target.IsInterface,
-				}
-				deps = append(deps, dep)
-				seen[baseName] = true
+		qn := target.QualifiedName()
+		if !seen[qn] {
+			// Determine if it's an interface dependency
+			isInterface := false
+			if fieldType, ok := typeMap[qn]; ok {
+				_, isInterface = fieldType.Underlying().(*types.Interface)
 			}
+
+			dep := Dependency{
+				TargetName:    target.Component.Name,
+				TargetPackage: target.Component.PackageName,
+				TargetType:    target.Type,
+				IsInterface:   isInterface || target.IsInterface,
+			}
+			deps = append(deps, dep)
+			seen[qn] = true
 		}
 	}
 

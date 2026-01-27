@@ -91,7 +91,7 @@ func (g *D3Generator) buildGraph(components []analyzer.AnalyzedComponent) d3Grap
 		}
 
 		node := d3Node{
-			ID:      comp.Component.Name,
+			ID:      comp.QualifiedName(),
 			Name:    comp.Component.Name,
 			Type:    string(comp.Type),
 			Package: comp.Component.PackageName,
@@ -103,10 +103,11 @@ func (g *D3Generator) buildGraph(components []analyzer.AnalyzedComponent) d3Grap
 
 	// Create links for dependencies
 	for _, comp := range components {
+		sourceQN := comp.QualifiedName()
 		for _, dep := range comp.Dependencies {
 			link := d3Link{
-				Source: comp.Component.Name,
-				Target: dep.TargetName,
+				Source: sourceQN,
+				Target: dep.QualifiedTarget(),
 				Type:   "dependency",
 			}
 			graph.Links = append(graph.Links, link)
@@ -115,8 +116,8 @@ func (g *D3Generator) buildGraph(components []analyzer.AnalyzedComponent) d3Grap
 		// Create links for interface implementations (dotted style)
 		for _, impl := range comp.Implements {
 			link := d3Link{
-				Source: comp.Component.Name,
-				Target: impl.InterfaceName,
+				Source: sourceQN,
+				Target: impl.InterfacePackage + "." + impl.InterfaceName,
 				Type:   "implementation",
 			}
 			graph.Links = append(graph.Links, link)
