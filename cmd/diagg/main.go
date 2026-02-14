@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/preslavrachev/diagg/analyzer"
 	"github.com/preslavrachev/diagg/config"
@@ -39,6 +40,10 @@ func main() {
 				Name:    "package-links-only",
 				Aliases: []string{"P"},
 				Usage:   "Collapse component dependencies to package-level import links",
+			},
+			&cli.BoolFlag{
+				Name:  "debug",
+				Usage: "Print debug information about parsed packages and components",
 			},
 		},
 		Action: runDiagg,
@@ -89,6 +94,9 @@ func runDiagg(c *cli.Context) error {
 	}
 
 	fmt.Printf("Found %d components\n", len(components))
+	if c.Bool("debug") {
+		printIncludedEntities(components)
+	}
 
 	// Step 2: Analyze components with type information (enables interface detection)
 	a := analyzer.NewAnalyzer(cfg)
@@ -167,4 +175,61 @@ func runDiagg(c *cli.Context) error {
 	}
 
 	return nil
+}
+
+func printIncludedEntities(components []parser.Component) {
+	type packageSummary struct {
+		Name  string
+		Path  string
+		Count int
+	}
+
+	packageCounts := make(map[string]*packageSummary)
+	for _, comp := range components {
+		key := comp.PackagePath + "::" + comp.PackageName
+		if summary, ok := packageCounts[key]; ok {
+			summary.Count++
+			continue
+		}
+
+		packageCounts[key] = &packageSummary{
+			Name:  comp.PackageName,
+			Path:  comp.PackagePath,
+			Count: 1,
+		}
+	}
+
+	packages := make([]packageSummary, 0, len(packageCounts))
+	for _, summary := range packageCounts {
+		packages = append(packages, *summary)
+	}
+
+	sort.Slice(packages, func(i, j int) bool {
+		if packages[i].Path == packages[j].Path {
+			return packages[i].Name < packages[j].Name
+		}
+		return packages[i].Path < packages[j].Path
+	})
+
+	fmt.Printf("\nDebug: Included packages (%d)\n", len(packages))
+	for _, pkg := range packages {
+		fmt.Printf("  - %s (%s) components=%d\n", pkg.Path, pkg.Name, pkg.Count)
+	}
+
+	sortedComponents := append([]parser.Component(nil), components...)
+	sort.Slice(sortedComponents, func(i, j int) bool {
+		if sortedComponents[i].PackagePath == sortedComponents[j].PackagePath {
+			if sortedComponents[i].PackageName == sortedComponents[j].PackageName {
+				return sortedComponents[i].Name < sortedComponents[j].Name
+			}
+			return sortedComponents[i].PackageName < sortedComponents[j].PackageName
+		}
+		return sortedComponents[i].PackagePath < sortedComponents[j].PackagePath
+	})
+
+	fmt.Printf("\nDebug: Included components (%d)\n", len(sortedComponents))
+	for _, comp := range sortedComponents {
+		fmt.Printf("  - %s.%s [%s] (%s)\n", comp.PackageName, comp.Name, comp.Kind, comp.PackagePath)
+	}
+	fmt.Println()
 }
