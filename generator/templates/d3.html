@@ -119,6 +119,8 @@
     <script>
         const data = {{.GraphJSON}};
         const colors = {{.ColorsJSON}};
+        const viewMode = "{{.ViewMode}}";
+        const isPackageView = viewMode === "package";
 
         // Set up SVG
         const width = window.innerWidth - 40;
@@ -161,7 +163,7 @@
 
         // AIDEV-NOTE: package-clustering - Create invisible anchor nodes for each package
         // These anchors pull components of the same package together via invisible links
-        const packageAnchors = packages.map(pkg => ({
+        const packageAnchors = isPackageView ? [] : packages.map(pkg => ({
             id: `__anchor_${pkg}`,
             package: pkg,
             isAnchor: true,
@@ -175,7 +177,7 @@
         const allNodes = [...data.nodes, ...packageAnchors];
 
         // Create invisible links from each component to its package anchor
-        const packageLinks = data.nodes.map(node => ({
+        const packageLinks = isPackageView ? [] : data.nodes.map(node => ({
             source: node.id,
             target: `__anchor_${node.package}`,
             type: "package-anchor"
@@ -188,7 +190,7 @@
         const legend = d3.select("#legend");
 
         // Add ENTRYPOINT first if it exists
-        const hasEntrypoint = data.nodes.some(n => n.type === "ENTRYPOINT");
+        const hasEntrypoint = !isPackageView && data.nodes.some(n => n.type === "ENTRYPOINT");
         if (hasEntrypoint) {
             const item = legend.append("div").attr("class", "legend-item");
             item.append("div")
@@ -199,7 +201,7 @@
         }
 
         // Add package colors
-        packages.filter(pkg => pkg !== "main").forEach((pkg, i) => {
+        packages.filter(pkg => isPackageView || pkg !== "main").forEach((pkg, i) => {
             const item = legend.append("div").attr("class", "legend-item");
             item.append("div")
                 .attr("class", "legend-color")
@@ -340,6 +342,9 @@
             .join("g")
             .attr("class", "node")
             .on("click", function(event, d) {
+                if (isPackageView) {
+                    return;
+                }
                 event.stopPropagation();
                 if (selectedPackage === d.package) {
                     clearPackageHull();

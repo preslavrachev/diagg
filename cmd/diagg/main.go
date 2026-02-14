@@ -35,6 +35,11 @@ func main() {
 				Value:   "plantuml",
 				Usage:   "Output format: plantuml or d3",
 			},
+			&cli.BoolFlag{
+				Name:    "package-links-only",
+				Aliases: []string{"P"},
+				Usage:   "Collapse component dependencies to package-level import links",
+			},
 		},
 		Action: runDiagg,
 	}
@@ -113,9 +118,18 @@ func runDiagg(c *cli.Context) error {
 		}
 	}
 
+	viewMode := generator.ViewModeComponent
+	if c.Bool("package-links-only") {
+		viewMode = generator.ViewModePackage
+	}
+
 	title := c.String("title")
 	if title == "" {
-		title = fmt.Sprintf("Component Diagram - %s", filepath.Base(absPath))
+		if viewMode == generator.ViewModePackage {
+			title = fmt.Sprintf("Package Diagram - %s", filepath.Base(absPath))
+		} else {
+			title = fmt.Sprintf("Component Diagram - %s", filepath.Base(absPath))
+		}
 	}
 
 	outFile, err := os.Create(outputPath)
@@ -128,9 +142,9 @@ func runDiagg(c *cli.Context) error {
 	var gen generator.Generator
 	switch format {
 	case "d3":
-		gen = generator.NewD3Generator(title, cfg)
+		gen = generator.NewD3Generator(title, cfg, generator.WithViewMode(viewMode))
 	case "plantuml":
-		gen = generator.NewPlantUMLGenerator(title, cfg)
+		gen = generator.NewPlantUMLGenerator(title, cfg, generator.WithViewMode(viewMode))
 	default:
 		return fmt.Errorf("unknown format: %s (supported: plantuml, d3)", format)
 	}

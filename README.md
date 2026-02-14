@@ -32,6 +32,7 @@ go install github.com/preslavrachev/diagg/cmd/diagg@latest
 diagg [directory]                     # Analyze and generate diagram.puml (PlantUML)
 diagg -o output.puml -t "My App"      # Custom output file and title
 diagg --format d3 -o diagram.html     # Generate interactive D3.js force-directed graph
+diagg -P                              # Package-only mode (A imports B => A -> B)
 ```
 
 **Rendering the diagram:**

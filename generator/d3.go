@@ -18,16 +18,24 @@ var d3HTMLTemplate string
 type D3Generator struct {
 	title  string
 	config *config.Config
+	opts   generatorOptions
 }
 
 // NewD3Generator creates a new D3 generator.
-func NewD3Generator(title string, cfg *config.Config) *D3Generator {
+func NewD3Generator(title string, cfg *config.Config, options ...Option) *D3Generator {
 	if title == "" {
 		title = cfg.Defaults.DiagramTitle
 	}
+
+	opts := defaultOptions()
+	for _, opt := range options {
+		opt(&opts)
+	}
+
 	return &D3Generator{
 		title:  title,
 		config: cfg,
+		opts:   opts,
 	}
 }
 
@@ -39,6 +47,7 @@ type d3Node struct {
 	Package string `json:"package"`
 	Role    string `json:"role"`
 	Size    int    `json:"size"` // Based on connectivity
+	Main    bool   `json:"main"`
 }
 
 // d3Link represents an edge in the D3 force graph
@@ -75,53 +84,42 @@ func (g *D3Generator) Generate(components []analyzer.AnalyzedComponent, w io.Wri
 
 // buildGraph converts analyzed components into D3 graph structure
 func (g *D3Generator) buildGraph(components []analyzer.AnalyzedComponent) d3Graph {
+	view := buildViewGraph(components, g.opts.viewMode, g.config.Defaults.PackageFallback)
+
 	graph := d3Graph{
-		Nodes: make([]d3Node, 0, len(components)),
+		Nodes: make([]d3Node, 0, len(view.Nodes)),
 		Links: make([]d3Link, 0),
 	}
 
 	d3cfg := g.config.Styling.D3
 
 	// Create nodes
-	for _, comp := range components {
+	for _, node := range view.Nodes {
 		size := d3cfg.BaseNodeSize
-		if comp.Metrics != nil {
+		if node.Metrics != nil {
 			// Scale size based on total degree
-			size = d3cfg.BaseNodeSize + (comp.Metrics.TotalDegree * d3cfg.SizeScaleFactor)
+			size = d3cfg.BaseNodeSize + (node.Metrics.TotalDegree * d3cfg.SizeScaleFactor)
 		}
 
-		node := d3Node{
-			ID:      comp.QualifiedName(),
-			Name:    comp.Component.Name,
-			Type:    string(comp.Type),
-			Package: comp.Component.PackageName,
-			Role:    string(comp.Role),
+		d3node := d3Node{
+			ID:      node.ID,
+			Name:    node.Name,
+			Type:    node.Type,
+			Package: node.Package,
+			Role:    string(node.Role),
 			Size:    size,
+			Main:    node.IsMainLike,
 		}
-		graph.Nodes = append(graph.Nodes, node)
+		graph.Nodes = append(graph.Nodes, d3node)
 	}
 
-	// Create links for dependencies
-	for _, comp := range components {
-		sourceQN := comp.QualifiedName()
-		for _, dep := range comp.Dependencies {
-			link := d3Link{
-				Source: sourceQN,
-				Target: dep.QualifiedTarget(),
-				Type:   "dependency",
-			}
-			graph.Links = append(graph.Links, link)
-		}
-
-		// Create links for interface implementations (dotted style)
-		for _, impl := range comp.Implements {
-			link := d3Link{
-				Source: sourceQN,
-				Target: impl.InterfacePackage + "." + impl.InterfaceName,
-				Type:   "implementation",
-			}
-			graph.Links = append(graph.Links, link)
-		}
+	// Create links
+	for _, edge := range view.Edges {
+		graph.Links = append(graph.Links, d3Link{
+			Source: edge.SourceID,
+			Target: edge.TargetID,
+			Type:   edge.Type,
+		})
 	}
 
 	return graph
@@ -129,6 +127,7 @@ func (g *D3Generator) buildGraph(components []analyzer.AnalyzedComponent) d3Grap
 
 type templateData struct {
 	Title             string
+	ViewMode          ViewMode
 	GraphJSON         template.JS
 	ColorsJSON        template.JS
 	LinkDistance      int
@@ -153,6 +152,7 @@ func (g *D3Generator) writeHTML(graphJSON string, w io.Writer) error {
 
 	data := templateData{
 		Title:             g.title,
+		ViewMode:          g.opts.viewMode,
 		GraphJSON:         template.JS(graphJSON),
 		ColorsJSON:        template.JS(colorsJSON),
 		LinkDistance:      d3cfg.LinkDistance,
