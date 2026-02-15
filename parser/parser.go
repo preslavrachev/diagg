@@ -8,6 +8,7 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
@@ -227,9 +228,12 @@ func extractPackagePath(filePath string) string {
 
 // PackageTypeInfo contains type information for analyzing interfaces
 type PackageTypeInfo struct {
-	Packages       map[string]*types.Package    // Package name -> package
-	TypeInfo       *types.Info                  // Combined type information
-	LoadedPackages map[string]*packages.Package // AIDEV-NOTE: function-body-analysis; full package info with AST for extracting type usage from function bodies
+	Packages             map[string]*types.Package    // Package name -> package
+	PackagesByPath       map[string]*types.Package    // Package path -> package
+	TypeInfo             *types.Info                  // Combined type information
+	LoadedPackages       map[string]*packages.Package // Package name -> package (legacy lookup)
+	LoadedPackagesByPath map[string]*packages.Package // Package path -> package
+	PackageImports       map[string][]string          // Package path -> imported package paths (project-local only)
 }
 
 // ParseDirectoryWithTypes parses a directory using go/packages for full type information
@@ -240,7 +244,8 @@ func (p *Parser) ParseDirectoryWithTypes(root string) ([]Component, *PackageType
 			packages.NeedTypes |
 			packages.NeedTypesInfo |
 			packages.NeedSyntax |
-			packages.NeedFiles,
+			packages.NeedFiles |
+			packages.NeedImports,
 		Dir: root,
 	}
 
@@ -257,8 +262,11 @@ func (p *Parser) ParseDirectoryWithTypes(root string) ([]Component, *PackageType
 
 	var components []Component
 	pkgTypeInfo := &PackageTypeInfo{
-		Packages:       make(map[string]*types.Package),
-		LoadedPackages: make(map[string]*packages.Package),
+		Packages:             make(map[string]*types.Package),
+		PackagesByPath:       make(map[string]*types.Package),
+		LoadedPackages:       make(map[string]*packages.Package),
+		LoadedPackagesByPath: make(map[string]*packages.Package),
+		PackageImports:       make(map[string][]string),
 	}
 
 	for _, pkg := range pkgs {
@@ -268,8 +276,10 @@ func (p *Parser) ParseDirectoryWithTypes(root string) ([]Component, *PackageType
 
 		// Store package for interface checking
 		pkgTypeInfo.Packages[pkg.Name] = pkg.Types
+		pkgTypeInfo.PackagesByPath[pkg.PkgPath] = pkg.Types
 		// Store full package for function body analysis
 		pkgTypeInfo.LoadedPackages[pkg.Name] = pkg
+		pkgTypeInfo.LoadedPackagesByPath[pkg.PkgPath] = pkg
 
 		// Store type info from first package
 		if pkgTypeInfo.TypeInfo == nil {
@@ -289,6 +299,19 @@ func (p *Parser) ParseDirectoryWithTypes(root string) ([]Component, *PackageType
 				components = append(components, *mainComponent)
 			}
 		}
+	}
+
+	// Record package import relationships across loaded project packages.
+	for _, pkg := range pkgs {
+		imports := make([]string, 0)
+		for importedPath := range pkg.Imports {
+			if _, ok := pkgTypeInfo.LoadedPackagesByPath[importedPath]; !ok {
+				continue
+			}
+			imports = append(imports, importedPath)
+		}
+		sort.Strings(imports)
+		pkgTypeInfo.PackageImports[pkg.PkgPath] = imports
 	}
 
 	return components, pkgTypeInfo, nil

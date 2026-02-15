@@ -209,37 +209,99 @@
             item.append("span").text(pkg);
         });
 
-        // Create force simulation with fixed parameters
+        function clamp(value, min, max) {
+            return Math.max(min, Math.min(max, value));
+        }
+
+        // Build adaptive layout parameters from graph size and density.
+        const visibleLinks = allLinks.filter(d => d.type !== "package-anchor");
+        const nodeCount = Math.max(1, data.nodes.length);
+        const edgeCount = visibleLinks.length;
+        const density = nodeCount > 1 ? edgeCount / (nodeCount * (nodeCount - 1)) : 0;
+        const avgDegree = (2 * edgeCount) / nodeCount;
+        const maxNodeSize = d3.max(data.nodes, d => d.size) || 10;
+
+        const spreadFactor = clamp(
+            1 + (nodeCount / 18) + (density * 2.5) + (avgDegree / 6),
+            1.0,
+            4.0
+        );
+
+        const adaptiveLinkDistance = Math.round(clamp({{.LinkDistance}} * spreadFactor, 120, 520));
+        const adaptiveChargeStrength = Math.round(
+            Math.min(-150, {{.ChargeStrength}} * (0.7 + spreadFactor * 0.85))
+        );
+        const adaptiveCollisionPadding = Math.round(
+            clamp(
+                {{.CollisionPadding}} + maxNodeSize * 0.3 + nodeCount * 0.35,
+                {{.CollisionPadding}},
+                90
+            )
+        );
+        const adaptiveCenteringStrength = clamp(
+            {{.CenteringStrength}} / (0.45 + spreadFactor * 0.75),
+            0.008,
+            {{.CenteringStrength}}
+        );
+
+        // Create force simulation with adaptive parameters
         const linkForce = d3.forceLink(allLinks)
             .id(d => d.id)
             .distance(d => {
                 // Package anchor links are shorter to pull components together
                 if (d.type === "package-anchor") {
-                    return 30;
+                    return Math.max(25, Math.round(adaptiveLinkDistance * 0.2));
                 }
-                return {{.LinkDistance}};
+                return adaptiveLinkDistance;
             })
             .strength(d => {
                 // Package anchor links have fixed strength
                 if (d.type === "package-anchor") {
-                    return 0.3;
+                    return clamp(0.16 + 0.02 * avgDegree, 0.12, 0.32);
                 }
-                return 1;
+                return clamp(1.0 - density * 0.45, 0.45, 0.95);
             });
 
         const chargeForce = d3.forceManyBody()
-            .strength({{.ChargeStrength}});
+            .strength(adaptiveChargeStrength);
 
         const collisionForce = d3.forceCollide()
-            .radius(d => d.size + {{.CollisionPadding}});
+            .radius(d => d.size + adaptiveCollisionPadding);
+
+        // Role-aware radial force keeps hubs/central packages closer to center and leaves further out.
+        const radialForce = d3.forceRadial((d) => {
+            if (d.isAnchor) {
+                return 0;
+            }
+
+            const minOuter = Math.min(width, height) * 0.22;
+            const maxOuter = Math.min(width, height) * 0.45;
+
+            if (d.role === "hub") {
+                return 0;
+            }
+            if (d.role === "central") {
+                return minOuter;
+            }
+            if (d.role === "leaf") {
+                return maxOuter;
+            }
+            return minOuter + (maxOuter - minOuter) * 0.55;
+        }, width / 2, height / 2).strength((d) => {
+            if (d.isAnchor) {
+                return 0;
+            }
+            return isPackageView ? 0.085 : 0.05;
+        });
 
         const simulation = d3.forceSimulation(allNodes)
             .force("link", linkForce)
             .force("charge", chargeForce)
             .force("center", d3.forceCenter(width / 2, height / 2))
             .force("collision", collisionForce)
-            .force("x", d3.forceX(width / 2).strength({{.CenteringStrength}}))
-            .force("y", d3.forceY(height / 2).strength({{.CenteringStrength}}));
+            .force("x", d3.forceX(width / 2).strength(adaptiveCenteringStrength))
+            .force("y", d3.forceY(height / 2).strength(adaptiveCenteringStrength))
+            .force("radial", radialForce);
 
         // AIDEV-NOTE: package-hulls - Interactive hull visualization on node click
         const hullGroup = g.append("g").attr("class", "hulls");
@@ -325,7 +387,6 @@
         }
 
         // Draw links with arrows (only visible links, not package anchors)
-        const visibleLinks = allLinks.filter(d => d.type !== "package-anchor");
         const link = g.append("g")
             .selectAll("line")
             .data(visibleLinks)

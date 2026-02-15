@@ -15,7 +15,9 @@ const (
 )
 
 type generatorOptions struct {
-	viewMode ViewMode
+	viewMode          ViewMode
+	packageImports    map[string][]string
+	packageNameByPath map[string]string
 }
 
 func defaultOptions() generatorOptions {
@@ -35,6 +37,38 @@ func WithViewMode(mode ViewMode) Option {
 			return
 		}
 		opts.viewMode = ViewModeComponent
+	}
+}
+
+// WithPackageImports provides package-level imports (source package path -> imported package paths).
+func WithPackageImports(imports map[string][]string) Option {
+	return func(opts *generatorOptions) {
+		if imports == nil {
+			return
+		}
+
+		copied := make(map[string][]string, len(imports))
+		for source, targets := range imports {
+			dst := make([]string, len(targets))
+			copy(dst, targets)
+			copied[source] = dst
+		}
+		opts.packageImports = copied
+	}
+}
+
+// WithPackageNamesByPath provides display names for package paths.
+func WithPackageNamesByPath(names map[string]string) Option {
+	return func(opts *generatorOptions) {
+		if names == nil {
+			return
+		}
+
+		copied := make(map[string]string, len(names))
+		for path, name := range names {
+			copied[path] = name
+		}
+		opts.packageNameByPath = copied
 	}
 }
 
@@ -64,9 +98,10 @@ func buildViewGraph(
 	components []analyzer.AnalyzedComponent,
 	mode ViewMode,
 	packageFallback string,
+	opts generatorOptions,
 ) viewGraph {
 	if mode == ViewModePackage {
-		return buildPackageViewGraph(components, packageFallback)
+		return buildPackageViewGraph(components, packageFallback, opts)
 	}
 	return buildComponentViewGraph(components, packageFallback)
 }
@@ -119,7 +154,14 @@ func buildComponentViewGraph(
 func buildPackageViewGraph(
 	components []analyzer.AnalyzedComponent,
 	packageFallback string,
+	opts generatorOptions,
 ) viewGraph {
+	if len(opts.packageImports) > 0 {
+		graph := buildImportBasedPackageViewGraph(opts)
+		annotatePackageMetrics(&graph)
+		return graph
+	}
+
 	graph := viewGraph{
 		Nodes: make([]viewNode, 0),
 		Edges: make([]viewEdge, 0),
@@ -163,7 +205,85 @@ func buildPackageViewGraph(
 		})
 	}
 
+	annotatePackageMetrics(&graph)
 	return graph
+}
+
+func buildImportBasedPackageViewGraph(opts generatorOptions) viewGraph {
+	graph := viewGraph{
+		Nodes: make([]viewNode, 0, len(opts.packageImports)),
+		Edges: make([]viewEdge, 0),
+	}
+
+	packages := make(map[string]bool)
+	edges := make(map[string]bool)
+
+	for source, imports := range opts.packageImports {
+		packages[source] = true
+		for _, target := range imports {
+			packages[target] = true
+			if source == target {
+				continue
+			}
+
+			key := fmt.Sprintf("%s->%s", source, target)
+			if edges[key] {
+				continue
+			}
+
+			graph.Edges = append(graph.Edges, viewEdge{
+				SourceID: source,
+				TargetID: target,
+				Type:     "dependency",
+			})
+			edges[key] = true
+		}
+	}
+
+	for pkgPath := range packages {
+		graph.Nodes = append(graph.Nodes, viewNode{
+			ID:      pkgPath,
+			Name:    packageDisplayName(pkgPath, opts.packageNameByPath),
+			Package: pkgPath,
+			Type:    "PACKAGE",
+			Role:    analyzer.RoleOrdinary,
+		})
+	}
+
+	return graph
+}
+
+func annotatePackageMetrics(graph *viewGraph) {
+	if graph == nil || len(graph.Nodes) == 0 {
+		return
+	}
+
+	indexByID := make(map[string]int, len(graph.Nodes))
+	for i, node := range graph.Nodes {
+		indexByID[node.ID] = i
+		graph.Nodes[i].Metrics = &analyzer.ComponentMetrics{}
+	}
+
+	for _, edge := range graph.Edges {
+		if edge.Type != "dependency" {
+			continue
+		}
+
+		srcIdx, srcOK := indexByID[edge.SourceID]
+		dstIdx, dstOK := indexByID[edge.TargetID]
+		if !srcOK || !dstOK {
+			continue
+		}
+
+		graph.Nodes[srcIdx].Metrics.OutDegree++
+		graph.Nodes[dstIdx].Metrics.InDegree++
+	}
+
+	for i := range graph.Nodes {
+		m := graph.Nodes[i].Metrics
+		m.TotalDegree = m.InDegree + m.OutDegree
+		graph.Nodes[i].Role = analyzer.ClassifyRole(m, len(graph.Nodes))
+	}
 }
 
 func normalizedPackageName(pkgName, fallback string) string {
@@ -178,4 +298,16 @@ func qualifiedName(pkg, name string) string {
 		return name
 	}
 	return pkg + "." + name
+}
+
+func packageDisplayName(path string, names map[string]string) string {
+	if names == nil {
+		return path
+	}
+
+	name, ok := names[path]
+	if !ok || name == "" {
+		return path
+	}
+	return path + " (" + name + ")"
 }

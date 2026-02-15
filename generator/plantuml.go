@@ -98,7 +98,7 @@ func (g *PlantUMLGenerator) generateComponentView(components []analyzer.Analyzed
 }
 
 func (g *PlantUMLGenerator) generatePackageView(components []analyzer.AnalyzedComponent, w io.Writer) error {
-	graph := buildViewGraph(components, ViewModePackage, g.config.Defaults.PackageFallback)
+	graph := buildViewGraph(components, ViewModePackage, g.config.Defaults.PackageFallback, g.opts)
 
 	if _, err := fmt.Fprintln(w, "@startuml"); err != nil {
 		return fmt.Errorf("writing header: %w", err)

@@ -95,7 +95,7 @@ func runDiagg(c *cli.Context) error {
 
 	fmt.Printf("Found %d components\n", len(components))
 	if c.Bool("debug") {
-		printIncludedEntities(components)
+		printIncludedEntities(components, pkgTypeInfo)
 	}
 
 	// Step 2: Analyze components with type information (enables interface detection)
@@ -147,12 +147,18 @@ func runDiagg(c *cli.Context) error {
 	defer outFile.Close()
 
 	// Select generator based on format
+	genOptions := []generator.Option{
+		generator.WithViewMode(viewMode),
+		generator.WithPackageImports(pkgTypeInfo.PackageImports),
+		generator.WithPackageNamesByPath(packageNamesByPath(pkgTypeInfo)),
+	}
+
 	var gen generator.Generator
 	switch format {
 	case "d3":
-		gen = generator.NewD3Generator(title, cfg, generator.WithViewMode(viewMode))
+		gen = generator.NewD3Generator(title, cfg, genOptions...)
 	case "plantuml":
-		gen = generator.NewPlantUMLGenerator(title, cfg, generator.WithViewMode(viewMode))
+		gen = generator.NewPlantUMLGenerator(title, cfg, genOptions...)
 	default:
 		return fmt.Errorf("unknown format: %s (supported: plantuml, d3)", format)
 	}
@@ -177,7 +183,7 @@ func runDiagg(c *cli.Context) error {
 	return nil
 }
 
-func printIncludedEntities(components []parser.Component) {
+func printIncludedEntities(components []parser.Component, pkgTypeInfo *parser.PackageTypeInfo) {
 	type packageSummary struct {
 		Name  string
 		Path  string
@@ -199,9 +205,24 @@ func printIncludedEntities(components []parser.Component) {
 		}
 	}
 
-	packages := make([]packageSummary, 0, len(packageCounts))
-	for _, summary := range packageCounts {
-		packages = append(packages, *summary)
+	packages := make([]packageSummary, 0)
+	if pkgTypeInfo != nil {
+		for pkgPath, pkg := range pkgTypeInfo.LoadedPackagesByPath {
+			count := 0
+			key := pkgPath + "::" + pkg.Name
+			if summary, ok := packageCounts[key]; ok {
+				count = summary.Count
+			}
+			packages = append(packages, packageSummary{
+				Name:  pkg.Name,
+				Path:  pkgPath,
+				Count: count,
+			})
+		}
+	} else {
+		for _, summary := range packageCounts {
+			packages = append(packages, *summary)
+		}
 	}
 
 	sort.Slice(packages, func(i, j int) bool {
@@ -232,4 +253,16 @@ func printIncludedEntities(components []parser.Component) {
 		fmt.Printf("  - %s.%s [%s] (%s)\n", comp.PackageName, comp.Name, comp.Kind, comp.PackagePath)
 	}
 	fmt.Println()
+}
+
+func packageNamesByPath(pkgTypeInfo *parser.PackageTypeInfo) map[string]string {
+	if pkgTypeInfo == nil {
+		return nil
+	}
+
+	names := make(map[string]string, len(pkgTypeInfo.LoadedPackagesByPath))
+	for pkgPath, pkg := range pkgTypeInfo.LoadedPackagesByPath {
+		names[pkgPath] = pkg.Name
+	}
+	return names
 }

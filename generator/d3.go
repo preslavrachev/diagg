@@ -84,7 +84,7 @@ func (g *D3Generator) Generate(components []analyzer.AnalyzedComponent, w io.Wri
 
 // buildGraph converts analyzed components into D3 graph structure
 func (g *D3Generator) buildGraph(components []analyzer.AnalyzedComponent) d3Graph {
-	view := buildViewGraph(components, g.opts.viewMode, g.config.Defaults.PackageFallback)
+	view := buildViewGraph(components, g.opts.viewMode, g.config.Defaults.PackageFallback, g.opts)
 
 	graph := d3Graph{
 		Nodes: make([]d3Node, 0, len(view.Nodes)),
