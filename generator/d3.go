@@ -47,6 +47,7 @@ type d3Node struct {
 	Package string `json:"package"`
 	Role    string `json:"role"`
 	Size    int    `json:"size"` // Based on connectivity
+	Degree  int    `json:"degree"`
 	Main    bool   `json:"main"`
 }
 
@@ -96,9 +97,11 @@ func (g *D3Generator) buildGraph(components []analyzer.AnalyzedComponent) d3Grap
 	// Create nodes
 	for _, node := range view.Nodes {
 		size := d3cfg.BaseNodeSize
+		degree := 0
 		if node.Metrics != nil {
 			// Scale size based on total degree
 			size = d3cfg.BaseNodeSize + (node.Metrics.TotalDegree * d3cfg.SizeScaleFactor)
+			degree = node.Metrics.TotalDegree
 		}
 
 		d3node := d3Node{
@@ -108,6 +111,7 @@ func (g *D3Generator) buildGraph(components []analyzer.AnalyzedComponent) d3Grap
 			Package: node.Package,
 			Role:    string(node.Role),
 			Size:    size,
+			Degree:  degree,
 			Main:    node.IsMainLike,
 		}
 		graph.Nodes = append(graph.Nodes, d3node)

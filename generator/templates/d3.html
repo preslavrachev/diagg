@@ -213,13 +213,89 @@
             return Math.max(min, Math.min(max, value));
         }
 
+        function normalize(value, maxValue) {
+            if (maxValue <= 0) {
+                return 0;
+            }
+            return value / maxValue;
+        }
+
         // Build adaptive layout parameters from graph size and density.
         const visibleLinks = allLinks.filter(d => d.type !== "package-anchor");
+        const visibleNodes = allNodes.filter(d => !d.isAnchor);
+
+        // AIDEV-NOTE: layout-optimization; derive centrality from current graph edges to drive core-periphery layout
+        const inboundCounts = new Map();
+        const outboundCounts = new Map();
+
+        visibleNodes.forEach((node) => {
+            inboundCounts.set(node.id, 0);
+            outboundCounts.set(node.id, 0);
+        });
+
+        visibleLinks.forEach((link) => {
+            const sourceID = typeof link.source === "object" ? link.source.id : link.source;
+            const targetID = typeof link.target === "object" ? link.target.id : link.target;
+            outboundCounts.set(sourceID, (outboundCounts.get(sourceID) || 0) + 1);
+            inboundCounts.set(targetID, (inboundCounts.get(targetID) || 0) + 1);
+        });
+
+        visibleNodes.forEach((node) => {
+            const inDegree = inboundCounts.get(node.id) || 0;
+            const outDegree = outboundCounts.get(node.id) || 0;
+            const graphDegree = inDegree + outDegree;
+            node.inDegree = inDegree;
+            node.outDegree = outDegree;
+            node.degree = Math.max(node.degree || 0, graphDegree);
+        });
+
         const nodeCount = Math.max(1, data.nodes.length);
         const edgeCount = visibleLinks.length;
         const density = nodeCount > 1 ? edgeCount / (nodeCount * (nodeCount - 1)) : 0;
         const avgDegree = (2 * edgeCount) / nodeCount;
-        const maxNodeSize = d3.max(data.nodes, d => d.size) || 10;
+        const maxDegree = d3.max(visibleNodes, d => d.degree || 0) || 1;
+        const degreeValuesDesc = visibleNodes
+            .map(d => d.degree || 0)
+            .sort((a, b) => b - a);
+        const coreIndex = Math.max(0, Math.min(
+            degreeValuesDesc.length - 1,
+            Math.floor(degreeValuesDesc.length * 0.3)
+        ));
+        const coreCutoff = degreeValuesDesc[coreIndex] || 0;
+
+        const minDimension = Math.min(width, height);
+        const minOuter = minDimension * 0.08;
+        const maxOuter = minDimension * 0.48;
+
+        visibleNodes.forEach((node) => {
+            const centrality = Math.pow(normalize(node.degree || 0, maxDegree), 0.8);
+            node.centrality = centrality;
+            node.ringRadius = maxOuter - centrality * (maxOuter - minOuter);
+            node.isCore = (node.degree || 0) >= coreCutoff;
+
+            // Entrypoints are operationally central; keep them closer to the core.
+            if (node.type === "ENTRYPOINT") {
+                node.ringRadius = Math.max(minOuter * 0.8, node.ringRadius * 0.75);
+                node.isCore = true;
+            }
+
+            if (node.role === "hub") {
+                node.ringRadius = Math.max(0, node.ringRadius * 0.45);
+                node.isCore = true;
+            } else if (node.role === "central") {
+                node.ringRadius *= 0.75;
+            } else if (node.role === "leaf") {
+                node.ringRadius = Math.min(maxOuter, node.ringRadius * 1.2);
+            }
+
+            node.renderSize = clamp(
+                node.size * (0.85 + centrality * 1.65),
+                node.size,
+                node.size * 3
+            );
+        });
+
+        const maxNodeSize = d3.max(visibleNodes, d => d.renderSize || d.size) || 10;
 
         const spreadFactor = clamp(
             1 + (nodeCount / 18) + (density * 2.5) + (avgDegree / 6),
@@ -252,7 +328,10 @@
                 if (d.type === "package-anchor") {
                     return Math.max(25, Math.round(adaptiveLinkDistance * 0.2));
                 }
-                return adaptiveLinkDistance;
+                const sourceCentrality = d.source.centrality || 0;
+                const targetCentrality = d.target.centrality || 0;
+                const avgCentrality = (sourceCentrality + targetCentrality) / 2;
+                return Math.round(adaptiveLinkDistance * (0.82 + (1 - avgCentrality) * 0.9));
             })
             .strength(d => {
                 // Package anchor links have fixed strength
@@ -263,35 +342,38 @@
             });
 
         const chargeForce = d3.forceManyBody()
-            .strength(adaptiveChargeStrength);
+            .strength((d) => {
+                if (d.isAnchor) {
+                    return 0;
+                }
+                const centrality = d.centrality || 0;
+                return adaptiveChargeStrength * (0.7 + centrality * 1.4);
+            });
 
         const collisionForce = d3.forceCollide()
-            .radius(d => d.size + adaptiveCollisionPadding);
+            .radius(d => {
+                if (d.isAnchor) {
+                    return 0;
+                }
+                const centrality = d.centrality || 0;
+                return (d.renderSize || d.size) + adaptiveCollisionPadding * (0.65 + centrality);
+            });
 
-        // Role-aware radial force keeps hubs/central packages closer to center and leaves further out.
+        // AIDEV-NOTE: directional-hints; map centrality to radial rings so high-connectivity nodes stay in the center.
         const radialForce = d3.forceRadial((d) => {
             if (d.isAnchor) {
                 return 0;
             }
-
-            const minOuter = Math.min(width, height) * 0.22;
-            const maxOuter = Math.min(width, height) * 0.45;
-
-            if (d.role === "hub") {
-                return 0;
-            }
-            if (d.role === "central") {
-                return minOuter;
-            }
-            if (d.role === "leaf") {
-                return maxOuter;
-            }
-            return minOuter + (maxOuter - minOuter) * 0.55;
+            return d.ringRadius || minOuter;
         }, width / 2, height / 2).strength((d) => {
             if (d.isAnchor) {
                 return 0;
             }
-            return isPackageView ? 0.085 : 0.05;
+            const centrality = d.centrality || 0;
+            // Peripheral nodes get stronger pull to the outskirts, core nodes stay flexible.
+            return isPackageView
+                ? clamp(0.05 + (1 - centrality) * 0.1, 0.05, 0.15)
+                : clamp(0.03 + (1 - centrality) * 0.07, 0.03, 0.1);
         });
 
         const simulation = d3.forceSimulation(allNodes)
@@ -302,6 +384,23 @@
             .force("x", d3.forceX(width / 2).strength(adaptiveCenteringStrength))
             .force("y", d3.forceY(height / 2).strength(adaptiveCenteringStrength))
             .force("radial", radialForce);
+
+        // Warm-start with central nodes, then release peripheral nodes.
+        const peripheralNodes = visibleNodes.filter(d => !d.isCore);
+        peripheralNodes.forEach((node, idx) => {
+            const angle = (2 * Math.PI * idx) / Math.max(peripheralNodes.length, 1);
+            const r = maxOuter * 0.95;
+            node.fx = width / 2 + Math.cos(angle) * r;
+            node.fy = height / 2 + Math.sin(angle) * r;
+        });
+
+        setTimeout(() => {
+            peripheralNodes.forEach((node) => {
+                node.fx = null;
+                node.fy = null;
+            });
+            simulation.alpha(0.5).restart();
+        }, 700);
 
         // AIDEV-NOTE: package-hulls - Interactive hull visualization on node click
         const hullGroup = g.append("g").attr("class", "hulls");
@@ -396,7 +495,6 @@
             .attr("marker-end", d => "url(#arrow-" + d.type + ")");
 
         // Draw nodes (only visible nodes, not anchors)
-        const visibleNodes = allNodes.filter(d => !d.isAnchor);
         const node = g.append("g")
             .selectAll("g")
             .data(visibleNodes)
@@ -421,7 +519,7 @@
         // Render circles for normal components
         node.filter(d => d.type !== "ENTRYPOINT")
             .append("circle")
-            .attr("r", d => d.size)
+            .attr("r", d => d.renderSize || d.size)
             .attr("fill", d => colorScale(d.package))
             .attr("stroke", "#fff")
             .attr("stroke-width", 2);
@@ -429,10 +527,10 @@
         // Render rectangles for ENTRYPOINT components
         node.filter(d => d.type === "ENTRYPOINT")
             .append("rect")
-            .attr("width", d => d.size * 2.5)
-            .attr("height", d => d.size * 2.5)
-            .attr("x", d => -d.size * 1.25)
-            .attr("y", d => -d.size * 1.25)
+            .attr("width", d => (d.renderSize || d.size) * 2.5)
+            .attr("height", d => (d.renderSize || d.size) * 2.5)
+            .attr("x", d => -(d.renderSize || d.size) * 1.25)
+            .attr("y", d => -(d.renderSize || d.size) * 1.25)
             .attr("rx", 6)
             .attr("ry", 6)
             .attr("fill", "#dc3545")
@@ -441,7 +539,7 @@
 
         node.append("text")
             .text(d => d.name)
-            .attr("dy", d => d.type === "ENTRYPOINT" ? d.size * 1.5 + 15 : d.size + 15)
+            .attr("dy", d => d.type === "ENTRYPOINT" ? (d.renderSize || d.size) * 1.5 + 15 : (d.renderSize || d.size) + 15)
             .attr("font-weight", d => d.type === "ENTRYPOINT" ? "bold" : "normal")
             .attr("font-size", d => d.type === "ENTRYPOINT" ? "14px" : "12px");
 
@@ -450,7 +548,10 @@
             .text(d => `${d.name}
 Type: ${d.type}
 Package: ${d.package}
-Role: ${d.role}`);
+Role: ${d.role}
+Degree: ${d.degree}
+In-degree: ${d.inDegree}
+Out-degree: ${d.outDegree}`);
 
         // Add click on background to clear hull
         svg.on("click", function(event) {
@@ -473,12 +574,14 @@ Role: ${d.role}`);
                 const dist = Math.sqrt(dx * dx + dy * dy);
 
                 // Calculate source edge (rectangles are larger)
-                const sourceRadius = d.source.type === "ENTRYPOINT" ? d.source.size * 1.77 : d.source.size;
+                const sourceNodeSize = d.source.renderSize || d.source.size;
+                const sourceRadius = d.source.type === "ENTRYPOINT" ? sourceNodeSize * 1.77 : sourceNodeSize;
                 const sourceX = d.source.x + (dx / dist) * sourceRadius;
                 const sourceY = d.source.y + (dy / dist) * sourceRadius;
 
                 // Calculate target edge (rectangles are larger)
-                const targetRadius = d.target.type === "ENTRYPOINT" ? d.target.size * 1.77 : d.target.size;
+                const targetNodeSize = d.target.renderSize || d.target.size;
+                const targetRadius = d.target.type === "ENTRYPOINT" ? targetNodeSize * 1.77 : targetNodeSize;
                 const targetX = d.target.x - (dx / dist) * (targetRadius + {{.ArrowHeadDistance}});
                 const targetY = d.target.y - (dy / dist) * (targetRadius + {{.ArrowHeadDistance}});
 
