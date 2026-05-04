@@ -28,16 +28,24 @@ const (
 type ExcalidrawGenerator struct {
 	title  string
 	config *config.Config
+	opts   generatorOptions
 }
 
 // NewExcalidrawGenerator creates a new Excalidraw generator.
-func NewExcalidrawGenerator(title string, cfg *config.Config) *ExcalidrawGenerator {
+func NewExcalidrawGenerator(title string, cfg *config.Config, options ...Option) *ExcalidrawGenerator {
 	if title == "" {
 		title = cfg.Defaults.DiagramTitle
 	}
+
+	opts := defaultOptions()
+	for _, opt := range options {
+		opt(&opts)
+	}
+
 	return &ExcalidrawGenerator{
 		title:  title,
 		config: cfg,
+		opts:   opts,
 	}
 }
 
@@ -126,6 +134,14 @@ type excalidrawPosition struct {
 
 // Generate writes the Excalidraw scene JSON to the writer.
 func (g *ExcalidrawGenerator) Generate(components []analyzer.AnalyzedComponent, w io.Writer) error {
+	if g.opts.viewMode == ViewModePackage {
+		return g.generatePackageView(components, w)
+	}
+
+	return g.generateComponentView(components, w)
+}
+
+func (g *ExcalidrawGenerator) generateComponentView(components []analyzer.AnalyzedComponent, w io.Writer) error {
 	scene := excalidrawFile{
 		Type:     "excalidraw",
 		Version:  2,
@@ -157,6 +173,42 @@ func (g *ExcalidrawGenerator) Generate(components []analyzer.AnalyzedComponent, 
 	for _, comp := range sortedComponents {
 		pos := layout[comp.QualifiedName()]
 		scene.Elements = append(scene.Elements, g.componentElements(comp, pos)...)
+	}
+
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(scene); err != nil {
+		return fmt.Errorf("encoding excalidraw scene: %w", err)
+	}
+
+	return nil
+}
+
+func (g *ExcalidrawGenerator) generatePackageView(components []analyzer.AnalyzedComponent, w io.Writer) error {
+	view := buildViewGraph(components, ViewModePackage, g.config.Defaults.PackageFallback, g.opts)
+	layout := layoutExcalidrawViewNodes(view.Nodes)
+
+	scene := excalidrawFile{
+		Type:     "excalidraw",
+		Version:  2,
+		Source:   excalidrawSource,
+		Elements: make([]excalidrawElement, 0, len(view.Nodes)*2+len(view.Edges)),
+		AppState: excalidrawAppState{
+			GridSize:                   20,
+			ViewBackgroundColor:        "#ffffff",
+			CurrentItemStrokeColor:     "#1e1e1e",
+			CurrentItemBackgroundColor: "transparent",
+		},
+		Files: map[string]struct{}{},
+	}
+
+	scene.Elements = append(scene.Elements, g.titleElement())
+	scene.Elements = append(scene.Elements, relationshipElementsFromView(view.Edges, layout)...)
+
+	nodes := sortViewNodesForExcalidraw(view.Nodes)
+	for _, node := range nodes {
+		pos := layout[node.ID]
+		scene.Elements = append(scene.Elements, packageNodeElements(node, pos)...)
 	}
 
 	encoder := json.NewEncoder(w)
@@ -358,6 +410,74 @@ func (g *ExcalidrawGenerator) relationshipElements(
 	return elements
 }
 
+func relationshipElementsFromView(
+	edges []viewEdge,
+	layout map[string]excalidrawPosition,
+) []excalidrawElement {
+	var elements []excalidrawElement
+
+	for _, edge := range edges {
+		sourcePos, ok := layout[edge.SourceID]
+		if !ok {
+			continue
+		}
+		targetPos, ok := layout[edge.TargetID]
+		if !ok {
+			continue
+		}
+
+		strokeStyle := "solid"
+		strokeColor := "#495057"
+		if edge.Type == "implementation" {
+			strokeStyle = "dashed"
+			strokeColor = "#7048e8"
+		}
+
+		elements = append(elements, arrowElement(
+			excalidrawID(edge.Type, edge.SourceID+"-"+edge.TargetID),
+			edge.SourceID,
+			edge.TargetID,
+			sourcePos,
+			targetPos,
+			strokeStyle,
+			strokeColor,
+		))
+	}
+
+	return elements
+}
+
+func packageNodeElements(node viewNode, pos excalidrawPosition) []excalidrawElement {
+	nodeID := excalidrawID("component", node.ID)
+	label := fmt.Sprintf("%s\nPACKAGE", node.Name)
+
+	return []excalidrawElement{
+		rectangleElement(
+			nodeID,
+			pos.x,
+			pos.y,
+			excalidrawNodeWidth,
+			excalidrawNodeHeight,
+			"#1864ab",
+			"#e7f5ff",
+			2,
+			"solid",
+			&excalidrawRoundness{Type: 3},
+		),
+		textElement(
+			excalidrawID("component-label", node.ID),
+			label,
+			pos.x+14,
+			pos.y+18,
+			excalidrawNodeWidth-28,
+			excalidrawNodeHeight-28,
+			16,
+			"#1e1e1e",
+			[]string{nodeID},
+		),
+	}
+}
+
 func (g *ExcalidrawGenerator) componentColor(comp analyzer.AnalyzedComponent) string {
 	if comp.Type == analyzer.TypeEntrypoint {
 		return "#ffe3e3"
@@ -468,6 +588,46 @@ func sortComponentsForExcalidraw(components []analyzer.AnalyzedComponent) []anal
 	})
 
 	return sorted
+}
+
+func sortViewNodesForExcalidraw(nodes []viewNode) []viewNode {
+	sorted := make([]viewNode, len(nodes))
+	copy(sorted, nodes)
+
+	sort.SliceStable(sorted, func(i, j int) bool {
+		iDegree := 0
+		jDegree := 0
+		if sorted[i].Metrics != nil {
+			iDegree = sorted[i].Metrics.TotalDegree
+		}
+		if sorted[j].Metrics != nil {
+			jDegree = sorted[j].Metrics.TotalDegree
+		}
+		if iDegree != jDegree {
+			return iDegree > jDegree
+		}
+
+		return sorted[i].ID < sorted[j].ID
+	})
+
+	return sorted
+}
+
+func layoutExcalidrawViewNodes(nodes []viewNode) map[string]excalidrawPosition {
+	sorted := sortViewNodesForExcalidraw(nodes)
+	positions := make(map[string]excalidrawPosition, len(sorted))
+
+	const nodesPerColumn = 8
+	for i, node := range sorted {
+		col := i / nodesPerColumn
+		row := i % nodesPerColumn
+		positions[node.ID] = excalidrawPosition{
+			x: 80 + float64(col)*(excalidrawPackageWidth+excalidrawPackageGap),
+			y: 140 + float64(row)*(excalidrawNodeHeight+excalidrawComponentGap),
+		}
+	}
+
+	return positions
 }
 
 func rectangleElement(

@@ -279,8 +279,12 @@ func (a *Analyzer) AnalyzeWithTypes(
 		qn := qualifiedName(comp.PackageName, comp.Name)
 		componentMap[qn] = &analyzed[len(analyzed)-1]
 
-		// Get the actual type from the appropriate package scope
-		if pkg, ok := pkgTypeInfo.Packages[comp.PackageName]; ok {
+		// Get the actual type from the appropriate package scope.
+		pkg, ok := pkgTypeInfo.PackagesByPath[comp.PackagePath]
+		if !ok {
+			pkg, ok = pkgTypeInfo.Packages[comp.PackageName]
+		}
+		if ok {
 			if obj := pkg.Scope().Lookup(comp.Name); obj != nil {
 				typeMap[qn] = obj.Type()
 				if iface, ok := obj.Type().Underlying().(*types.Interface); ok {
@@ -395,7 +399,11 @@ func (a *Analyzer) extractDependenciesWithTypes(
 	}
 
 	// AIDEV-NOTE: function-body-analysis; extract type usage from function bodies (local vars, function calls)
-	if pkg, ok := pkgTypeInfo.LoadedPackages[comp.PackageName]; ok {
+	pkg, ok := pkgTypeInfo.LoadedPackagesByPath[comp.PackagePath]
+	if !ok {
+		pkg, ok = pkgTypeInfo.LoadedPackages[comp.PackageName]
+	}
+	if ok {
 		// Walk all function declarations in this package and find methods for this type
 		for _, syntax := range pkg.Syntax {
 			ast.Inspect(syntax, func(n ast.Node) bool {

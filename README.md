@@ -33,6 +33,9 @@ diagg [directory]                     # Analyze and generate diagram.puml (Plant
 diagg -o output.puml -t "My App"      # Custom output file and title
 diagg --format d3 -o diagram.html     # Generate interactive D3.js force-directed graph
 diagg --format excalidraw             # Generate diagram.excalidraw for Excalidraw
+diagg -P                              # Package-only mode from imports (A imports B => A -> B)
+diagg -P --format d3                  # Interactive package-only graph
+diagg --debug                         # Print discovered packages/components (debug output)
 ```
 
 **Rendering the diagram:**

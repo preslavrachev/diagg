@@ -14,22 +14,37 @@ import (
 type PlantUMLGenerator struct {
 	title  string
 	config *config.Config
+	opts   generatorOptions
 }
 
 // NewPlantUMLGenerator creates a new PlantUML generator.
 // The config pointer is stored but never modified - it's read-only.
-func NewPlantUMLGenerator(title string, cfg *config.Config) *PlantUMLGenerator {
+func NewPlantUMLGenerator(title string, cfg *config.Config, options ...Option) *PlantUMLGenerator {
 	if title == "" {
 		title = cfg.Defaults.DiagramTitle
 	}
+	opts := defaultOptions()
+	for _, opt := range options {
+		opt(&opts)
+	}
+
 	return &PlantUMLGenerator{
 		title:  title,
 		config: cfg,
+		opts:   opts,
 	}
 }
 
 // Generate writes the PlantUML diagram to the writer
 func (g *PlantUMLGenerator) Generate(components []analyzer.AnalyzedComponent, w io.Writer) error {
+	if g.opts.viewMode == ViewModePackage {
+		return g.generatePackageView(components, w)
+	}
+
+	return g.generateComponentView(components, w)
+}
+
+func (g *PlantUMLGenerator) generateComponentView(components []analyzer.AnalyzedComponent, w io.Writer) error {
 	// Write header
 	if _, err := fmt.Fprintln(w, "@startuml"); err != nil {
 		return fmt.Errorf("writing header: %w", err)
@@ -75,6 +90,50 @@ func (g *PlantUMLGenerator) Generate(components []analyzer.AnalyzedComponent, w 
 	}
 
 	// Write footer
+	if _, err := fmt.Fprintln(w, "\n@enduml"); err != nil {
+		return fmt.Errorf("writing footer: %w", err)
+	}
+
+	return nil
+}
+
+func (g *PlantUMLGenerator) generatePackageView(components []analyzer.AnalyzedComponent, w io.Writer) error {
+	graph := buildViewGraph(components, ViewModePackage, g.config.Defaults.PackageFallback, g.opts)
+
+	if _, err := fmt.Fprintln(w, "@startuml"); err != nil {
+		return fmt.Errorf("writing header: %w", err)
+	}
+	if _, err := fmt.Fprintln(w, "!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml"); err != nil {
+		return fmt.Errorf("writing C4 include: %w", err)
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "title %s\n\n", g.title); err != nil {
+		return fmt.Errorf("writing title: %w", err)
+	}
+
+	for _, node := range graph.Nodes {
+		id := sanitizeID(node.ID)
+		if _, err := fmt.Fprintf(w, "Component(%s, \"%s\", \"Go\", \"Package\")\n", id, node.Name); err != nil {
+			return fmt.Errorf("writing package node %s: %w", node.Name, err)
+		}
+	}
+
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+
+	for _, edge := range graph.Edges {
+		if edge.Type != "dependency" {
+			continue
+		}
+
+		if _, err := fmt.Fprintf(w, "Rel(%s, %s, \"imports\")\n", sanitizeID(edge.SourceID), sanitizeID(edge.TargetID)); err != nil {
+			return fmt.Errorf("writing package relationship %s -> %s: %w", edge.SourceID, edge.TargetID, err)
+		}
+	}
+
 	if _, err := fmt.Fprintln(w, "\n@enduml"); err != nil {
 		return fmt.Errorf("writing footer: %w", err)
 	}
