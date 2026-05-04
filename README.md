@@ -18,7 +18,7 @@ Unlike tools that require manual wiring or extensive configuration, diagg infers
 - Components grouped by package boundaries
 - Automatic classification (Service, Repository, Handler, etc.)
 - Visual hierarchy based on connectivity - heavily-used components rendered more prominently
-- Multiple output formats: PlantUML C4 diagrams or interactive D3.js force-directed graphs
+- Multiple output formats: PlantUML C4 diagrams, interactive D3.js force-directed graphs, or Excalidraw scenes
 
 ## Install
 
@@ -32,6 +32,7 @@ go install github.com/preslavrachev/diagg/cmd/diagg@latest
 diagg [directory]                     # Analyze and generate diagram.puml (PlantUML)
 diagg -o output.puml -t "My App"      # Custom output file and title
 diagg --format d3 -o diagram.html     # Generate interactive D3.js force-directed graph
+diagg --format excalidraw             # Generate diagram.excalidraw for Excalidraw
 ```
 
 **Rendering the diagram:**
@@ -42,6 +43,9 @@ plantuml diagram.puml                # Local rendering (requires PlantUML instal
 
 # D3.js (interactive):
 open diagram-d3.html                 # Opens in browser, no additional tools needed
+
+# Excalidraw:
+# Import diagram.excalidraw at https://excalidraw.com/
 ```
 
 See [diagram.puml](diagram.puml) for an example of diagg analyzing itself.

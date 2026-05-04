@@ -33,7 +33,7 @@ func main() {
 				Name:    "format",
 				Aliases: []string{"f"},
 				Value:   "plantuml",
-				Usage:   "Output format: plantuml or d3",
+				Usage:   "Output format: plantuml, d3, or excalidraw",
 			},
 		},
 		Action: runDiagg,
@@ -108,6 +108,8 @@ func runDiagg(c *cli.Context) error {
 		switch format {
 		case "d3":
 			outputPath = "diagram.html"
+		case "excalidraw":
+			outputPath = "diagram.excalidraw"
 		default:
 			outputPath = cfg.Defaults.OutputFile
 		}
@@ -129,10 +131,12 @@ func runDiagg(c *cli.Context) error {
 	switch format {
 	case "d3":
 		gen = generator.NewD3Generator(title, cfg)
+	case "excalidraw":
+		gen = generator.NewExcalidrawGenerator(title, cfg)
 	case "plantuml":
 		gen = generator.NewPlantUMLGenerator(title, cfg)
 	default:
-		return fmt.Errorf("unknown format: %s (supported: plantuml, d3)", format)
+		return fmt.Errorf("unknown format: %s (supported: plantuml, d3, excalidraw)", format)
 	}
 
 	if err := gen.Generate(analyzed, outFile); err != nil {
@@ -150,6 +154,9 @@ func runDiagg(c *cli.Context) error {
 	case "d3":
 		fmt.Println("\nTo view the diagram:")
 		fmt.Printf("  open %s\n", outputPath)
+	case "excalidraw":
+		fmt.Println("\nTo view the diagram:")
+		fmt.Println("  Import the .excalidraw file at https://excalidraw.com/")
 	}
 
 	return nil
