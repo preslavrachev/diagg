@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -34,7 +35,7 @@ func main() {
 				Name:    "format",
 				Aliases: []string{"f"},
 				Value:   "plantuml",
-				Usage:   "Output format: plantuml, d3, excalidraw, or json (json requires --package-links-only)",
+				Usage:   "Output format: plantuml, d3, excalidraw, or json (json defaults to stdout unless --output is set)",
 			},
 			&cli.BoolFlag{
 				Name:    "package-links-only",
@@ -59,6 +60,16 @@ func main() {
 }
 
 func runDiagg(c *cli.Context) error {
+	format := c.String("format")
+	// AIDEV-NOTE: json-stdout; json defaults to stdout when --output is unset, matching
+	// the convention of CLI tools that emit machine-readable output (jq, kubectl -o json, ...).
+	// All progress/status messages must go to stderr in that case, so stdout carries only
+	// the JSON document and stays pipeable (e.g. `diagg --format json | jq .`).
+	logOut := io.Writer(os.Stdout)
+	if format == "json" && c.String("output") == "" {
+		logOut = os.Stderr
+	}
+
 	// Get the target directory (default to current directory)
 	targetDir := "."
 	if c.NArg() > 0 {
@@ -80,7 +91,7 @@ func runDiagg(c *cli.Context) error {
 		return fmt.Errorf("%s is not a directory", absPath)
 	}
 
-	fmt.Printf("Analyzing Go code in: %s\n", absPath)
+	fmt.Fprintf(logOut, "Analyzing Go code in: %s\n", absPath)
 
 	// Initialize configuration with sensible defaults
 	cfg := config.New()
@@ -92,19 +103,14 @@ func runDiagg(c *cli.Context) error {
 		return fmt.Errorf("parsing directory: %w", err)
 	}
 
-	if handled, err := maybeWritePackageGraphJSON(
-		c.String("format"), c.Bool("package-links-only"), c.String("output"), components, pkgTypeInfo,
-	); handled {
-		return err
+	plan, err := planDiagram(format, c.Bool("package-links-only"), c.String("output"), len(components), cfg.Defaults.OutputFile)
+	if err != nil {
+		return fmt.Errorf("%w in %s", err, absPath)
 	}
 
-	if len(components) == 0 {
-		return fmt.Errorf("no Go components found in %s", absPath)
-	}
-
-	fmt.Printf("Found %d components\n", len(components))
+	fmt.Fprintf(logOut, "Found %d components\n", len(components))
 	if c.Bool("debug") {
-		printIncludedEntities(components, pkgTypeInfo)
+		printIncludedEntities(logOut, components, pkgTypeInfo)
 	}
 
 	// Step 2: Analyze components with type information (enables interface detection)
@@ -117,49 +123,25 @@ func runDiagg(c *cli.Context) error {
 		typeCounts[comp.Type]++
 	}
 
-	fmt.Println("\nComponent breakdown:")
+	fmt.Fprintln(logOut, "\nComponent breakdown:")
 	for compType, count := range typeCounts {
-		fmt.Printf("  %s: %d\n", compType, count)
+		fmt.Fprintf(logOut, "  %s: %d\n", compType, count)
 	}
 
 	// Step 3: Generate diagram
-	format := c.String("format")
-	outputPath := c.String("output")
-	if outputPath == "" {
-		// Set default output file based on format
-		switch format {
-		case "d3":
-			outputPath = "diagram.html"
-		case "excalidraw":
-			outputPath = "diagram.excalidraw"
-		default:
-			outputPath = cfg.Defaults.OutputFile
-		}
-	}
-
-	viewMode := generator.ViewModeComponent
-	if c.Bool("package-links-only") {
-		viewMode = generator.ViewModePackage
-	}
-
 	title := c.String("title")
 	if title == "" {
-		if viewMode == generator.ViewModePackage {
+		if plan.ViewMode == generator.ViewModePackage {
 			title = fmt.Sprintf("Package Diagram - %s", filepath.Base(absPath))
 		} else {
 			title = fmt.Sprintf("Component Diagram - %s", filepath.Base(absPath))
 		}
 	}
 
-	outFile, err := os.Create(outputPath)
-	if err != nil {
-		return fmt.Errorf("creating output file: %w", err)
-	}
-	defer outFile.Close()
-
-	// Select generator based on format
+	// Select generator based on format, before touching the filesystem: an
+	// unknown format must fail without creating/truncating the output file.
 	genOptions := []generator.Option{
-		generator.WithViewMode(viewMode),
+		generator.WithViewMode(plan.ViewMode),
 		generator.WithPackageImports(pkgTypeInfo.PackageImports),
 		generator.WithPackageNamesByPath(packageNamesByPath(pkgTypeInfo)),
 	}
@@ -170,36 +152,54 @@ func runDiagg(c *cli.Context) error {
 		gen = generator.NewD3Generator(title, cfg, genOptions...)
 	case "excalidraw":
 		gen = generator.NewExcalidrawGenerator(title, cfg, genOptions...)
+	case "json":
+		gen = generator.NewJSONGenerator(title, cfg, genOptions...)
 	case "plantuml":
 		gen = generator.NewPlantUMLGenerator(title, cfg, genOptions...)
 	default:
-		return fmt.Errorf("unknown format: %s (supported: plantuml, d3, excalidraw)", format)
+		return fmt.Errorf("unknown format: %s (supported: plantuml, d3, excalidraw, json)", format)
 	}
 
-	if err := gen.Generate(analyzed, outFile); err != nil {
+	var out io.Writer = os.Stdout
+	if !plan.ToStdout {
+		outFile, err := os.Create(plan.OutputPath)
+		if err != nil {
+			return fmt.Errorf("creating output file: %w", err)
+		}
+		defer outFile.Close()
+		out = outFile
+	}
+
+	if err := gen.Generate(analyzed, out); err != nil {
 		return fmt.Errorf("generating diagram: %w", err)
 	}
 
-	fmt.Printf("\nDiagram written to: %s\n", outputPath)
+	if plan.ToStdout {
+		return nil
+	}
+
+	fmt.Fprintf(logOut, "\nDiagram written to: %s\n", plan.OutputPath)
 
 	// Format-specific instructions
 	switch format {
 	case "plantuml":
-		fmt.Println("\nTo render the diagram:")
-		fmt.Printf("  plantuml %s\n", outputPath)
-		fmt.Println("  OR visit: http://www.plantuml.com/plantuml/uml/")
+		fmt.Fprintln(logOut, "\nTo render the diagram:")
+		fmt.Fprintf(logOut, "  plantuml %s\n", plan.OutputPath)
+		fmt.Fprintln(logOut, "  OR visit: http://www.plantuml.com/plantuml/uml/")
 	case "d3":
-		fmt.Println("\nTo view the diagram:")
-		fmt.Printf("  open %s\n", outputPath)
+		fmt.Fprintln(logOut, "\nTo view the diagram:")
+		fmt.Fprintf(logOut, "  open %s\n", plan.OutputPath)
 	case "excalidraw":
-		fmt.Println("\nTo view the diagram:")
-		fmt.Println("  Import the .excalidraw file at https://excalidraw.com/")
+		fmt.Fprintln(logOut, "\nTo view the diagram:")
+		fmt.Fprintln(logOut, "  Import the .excalidraw file at https://excalidraw.com/")
+	case "json":
+		fmt.Fprintf(logOut, "\nTo view the graph:\n  cat %s | jq .\n", plan.OutputPath)
 	}
 
 	return nil
 }
 
-func printIncludedEntities(components []parser.Component, pkgTypeInfo *parser.PackageTypeInfo) {
+func printIncludedEntities(w io.Writer, components []parser.Component, pkgTypeInfo *parser.PackageTypeInfo) {
 	type packageSummary struct {
 		Name  string
 		Path  string
@@ -248,9 +248,9 @@ func printIncludedEntities(components []parser.Component, pkgTypeInfo *parser.Pa
 		return packages[i].Path < packages[j].Path
 	})
 
-	fmt.Printf("\nDebug: Included packages (%d)\n", len(packages))
+	fmt.Fprintf(w, "\nDebug: Included packages (%d)\n", len(packages))
 	for _, pkg := range packages {
-		fmt.Printf("  - %s (%s) components=%d\n", pkg.Path, pkg.Name, pkg.Count)
+		fmt.Fprintf(w, "  - %s (%s) components=%d\n", pkg.Path, pkg.Name, pkg.Count)
 	}
 
 	sortedComponents := append([]parser.Component(nil), components...)
@@ -264,11 +264,11 @@ func printIncludedEntities(components []parser.Component, pkgTypeInfo *parser.Pa
 		return sortedComponents[i].PackagePath < sortedComponents[j].PackagePath
 	})
 
-	fmt.Printf("\nDebug: Included components (%d)\n", len(sortedComponents))
+	fmt.Fprintf(w, "\nDebug: Included components (%d)\n", len(sortedComponents))
 	for _, comp := range sortedComponents {
-		fmt.Printf("  - %s.%s [%s] (%s)\n", comp.PackageName, comp.Name, comp.Kind, comp.PackagePath)
+		fmt.Fprintf(w, "  - %s.%s [%s] (%s)\n", comp.PackageName, comp.Name, comp.Kind, comp.PackagePath)
 	}
-	fmt.Println()
+	fmt.Fprintln(w)
 }
 
 func packageNamesByPath(pkgTypeInfo *parser.PackageTypeInfo) map[string]string {

@@ -78,7 +78,7 @@ Formats:
 1. **PlantUML C4** (default) - `diagram.puml` - static C4 component diagram
 2. **D3.js** - `diagram-d3.html` - interactive force-directed graph with package clustering
 3. **Excalidraw** - `diagram.excalidraw` - editable Excalidraw scene
-4. **JSON** (`--format json`, requires `-P`) - `packages.json` - machine-readable package graph (import path, root-level flag, component count, local imports, degree/role) for CI or scripting; see [cmd/diagg/json.go](cmd/diagg/json.go) and [analyzer/package_graph.go](analyzer/package_graph.go)
+4. **JSON** (`--format json`) - machine-readable node/edge graph (id, name, package, type, role, degree metrics), supporting both view modes exactly like the other generators; see [generator/json.go](generator/json.go). Unlike the other formats, JSON defaults to stdout (not a file) when `--output` is unset, so it composes with `jq`/CI pipelines - all progress/debug logging is routed to stderr in that case (see the `json-stdout` AIDEV-NOTE in [cmd/diagg/main.go](cmd/diagg/main.go)).
 
 See [generator/plantuml.go](generator/plantuml.go) and [generator/d3.go](generator/d3.go) for implementation details.
 

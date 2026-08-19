@@ -18,7 +18,7 @@ Unlike tools that require manual wiring or extensive configuration, diagg infers
 - Components grouped by package boundaries
 - Automatic classification (Service, Repository, Handler, etc.)
 - Visual hierarchy based on connectivity - heavily-used components rendered more prominently
-- Multiple output formats: PlantUML C4 diagrams, interactive D3.js force-directed graphs, or Excalidraw scenes
+- Multiple output formats: PlantUML C4 diagrams, interactive D3.js force-directed graphs, Excalidraw scenes, or machine-readable JSON
 
 ## Install
 
@@ -35,8 +35,16 @@ diagg --format d3 -o diagram.html     # Generate interactive D3.js force-directe
 diagg --format excalidraw             # Generate diagram.excalidraw for Excalidraw
 diagg -P                              # Package-only mode from imports (A imports B => A -> B)
 diagg -P --format d3                  # Interactive package-only graph
-diagg -P --format json                # Machine-readable package graph (for CI/scripting)
+diagg --format json                   # Component-level JSON, printed to stdout
+diagg -P --format json                # Package-level JSON, printed to stdout
+diagg --format json -o out.json       # Write JSON to a file instead of stdout
 diagg --debug                         # Print discovered packages/components (debug output)
+```
+
+`--format json` works exactly like the other formats - it respects `-P` for package-vs-component granularity - but defaults to stdout instead of a file when `-o`/`--output` isn't given, so it composes with `jq`, pre-commit hooks, and other pipelines:
+
+```bash
+diagg -P --format json | jq '.nodes[] | select(.role == "hub")'
 ```
 
 **Structural checks (for CI / pre-commit):**
