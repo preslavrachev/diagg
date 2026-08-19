@@ -58,6 +58,9 @@ The analyzer detects dependencies from multiple sources:
   - Detects dependencies from patterns like `parser := markdown.NewStreamingParser()`
   - Analyzes return types of function calls rather than just searching for "NewXXX" patterns
   - Filters out standard library types to reduce noise
+  - This walk only covers **methods** (functions with a receiver matching the component). A
+    type referenced only from a free (package-level) function - e.g. a plain constructor
+    caller - produces no `Dependency` edge; see `AnalyzedComponent.FreeFunctionReferences` below.
 
 ## Connectivity Metrics
 
@@ -66,6 +69,33 @@ The analyzer includes a metrics system ([analyzer/metrics.go](analyzer/metrics.g
 - **Role classification** - `hub` (high in-degree), `leaf` (high out-degree, low in-degree), `central` (high total), `ordinary`
 
 These metrics drive visual hierarchy in the generated diagrams. See [analyzer/metrics.go](analyzer/metrics.go) for thresholds.
+
+### Free-Function Usage (`AnalyzedComponent.FreeFunctionReferences`)
+
+`main` packages get full free-function coverage via a separate mechanism
+(`parser.extractMainComponent`, which walks the whole package and produces real
+`Dependency` edges). Every other package's free functions - constructors, helpers,
+anything without a receiver - are walked by `Analyzer.freeFunctionReferenceCounts`
+([analyzer/analyzer.go](analyzer/analyzer.go)), but deliberately **not** folded into
+`Metrics.InDegree`/`Role`: there is no component to draw a `Dependency` edge from, so
+merging the count into the graph metrics would change a node's role/visual weight with
+no edge in the diagram to explain why. It is exposed as a separate
+`FreeFunctionReferences int` field instead. Multi-return calls (`func NewRepo() (*Repo,
+error)`, the idiomatic Go constructor shape) are unpacked via a `*types.Tuple` case in
+`addDepFromType`, so the value half of the pair is still detected.
+
+A free function that both lives in a type's own package AND declares that same type as
+one of its own return values is that type's constructor (the `func NewX() *X { return
+&X{} }` shape) - referencing the type inside its own body is excluded as definitional,
+not usage evidence. This is narrower than a blanket same-package skip: a *different*
+free function in the same package that wires two components together (e.g.
+`func BuildService() *Service { repo := NewRepo(); return &Service{repo: repo} }`) still
+counts as usage of `Repo`, since `BuildService`'s own return type is `*Service`, not
+`*Repo`.
+
+`FreeFunctionReferences` is **not currently surfaced** in any generator (PlantUML/D3/
+Excalidraw/JSON) - it exists purely on `AnalyzedComponent` today, for a future consumer
+(e.g. an unused-component check: `Metrics.InDegree + FreeFunctionReferences == 0`).
 
 ## Output Formats
 

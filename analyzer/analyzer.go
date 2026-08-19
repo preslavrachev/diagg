@@ -7,6 +7,7 @@ import (
 
 	"github.com/preslavrachev/diagg/config"
 	"github.com/preslavrachev/diagg/parser"
+	"golang.org/x/tools/go/packages"
 )
 
 // ComponentType represents the architectural role of a component
@@ -35,6 +36,20 @@ type AnalyzedComponent struct {
 	IsInterface  bool                      // True if this component is an interface
 	Metrics      *ComponentMetrics         // Graph connectivity metrics for layout optimization
 	Role         ComponentRole             // Architectural role based on connectivity
+
+	// FreeFunctionReferences counts references to this component from free (non-method)
+	// functions - e.g. a plain constructor caller, or a same-package function that wires
+	// this component into another one. Excluded: a free function referencing this type as
+	// its own declared return value while living in this component's own package (the
+	// `func NewX() *X { return &X{} }` constructor shape) - see freeFunctionReferenceCounts.
+	// It is tracked separately from Metrics.InDegree/Role/TotalDegree, which drive diagram layout and
+	// visual hierarchy: these references have no corresponding Dependency edge (there is
+	// no component to draw the edge from), so folding them into the graph metrics would
+	// change a node's role/size with no visible relationship to explain why. Consumers
+	// that want a usage signal for "is this exported type referenced anywhere" (e.g. an
+	// unused-component check) should treat Metrics.InDegree + FreeFunctionReferences > 0
+	// as "used".
+	FreeFunctionReferences int
 }
 
 // Dependency represents a relationship between components
@@ -333,12 +348,16 @@ func (a *Analyzer) AnalyzeWithTypes(
 		}
 	}
 
-	// Fourth pass: calculate metrics and assign roles
+	// Fourth pass: calculate metrics and assign roles. Free-function usage is recorded
+	// separately (FreeFunctionReferences) rather than folded in here, since it has no
+	// Dependency edge to back it - see the AnalyzedComponent.FreeFunctionReferences doc.
 	metrics := CalculateMetrics(analyzed)
+	freeFunctionRefs := a.freeFunctionReferenceCounts(componentMap, pkgTypeInfo)
 	for i := range analyzed {
 		qn := analyzed[i].QualifiedName()
 		analyzed[i].Metrics = metrics[qn]
 		analyzed[i].Role = ClassifyRole(metrics[qn], len(analyzed))
+		analyzed[i].FreeFunctionReferences = freeFunctionRefs[qn]
 	}
 
 	return analyzed
@@ -432,40 +451,7 @@ func (a *Analyzer) extractDependenciesWithTypes(
 				// Walk the function body and extract type usage
 				// AIDEV-NOTE: type-info-lookup; use package-specific TypesInfo for accurate type resolution
 				if funcDecl.Body != nil && pkg.TypesInfo != nil {
-					ast.Inspect(funcDecl.Body, func(bodyNode ast.Node) bool {
-						// Look for composite literals (e.g., MyType{}, &MyType{})
-						if compLit, ok := bodyNode.(*ast.CompositeLit); ok {
-							if typeInfo, hasType := pkg.TypesInfo.Types[compLit]; hasType {
-								addDepFromType(typeInfo.Type, addDep)
-							}
-						}
-
-						// Look for function calls and check their return types
-						// AIDEV-NOTE: constructor-detection; catches markdown.NewStreamingParser() by return type
-						if callExpr, ok := bodyNode.(*ast.CallExpr); ok {
-							if typeInfo, hasType := pkg.TypesInfo.Types[callExpr]; hasType {
-								addDepFromType(typeInfo.Type, addDep)
-							}
-						}
-
-						// Look for type assertions (e.g., x.(MyType))
-						if typeAssert, ok := bodyNode.(*ast.TypeAssertExpr); ok {
-							if typeInfo, hasType := pkg.TypesInfo.Types[typeAssert.Type]; hasType {
-								addDepFromType(typeInfo.Type, addDep)
-							}
-						}
-
-						// Look for variable declarations with explicit types
-						if valSpec, ok := bodyNode.(*ast.ValueSpec); ok {
-							if valSpec.Type != nil {
-								if typeInfo, hasType := pkg.TypesInfo.Types[valSpec.Type]; hasType {
-									addDepFromType(typeInfo.Type, addDep)
-								}
-							}
-						}
-
-						return true
-					})
+					walkFuncBodyTypeUsage(funcDecl.Body, pkg.TypesInfo, addDep)
 				}
 
 				return true
@@ -474,6 +460,142 @@ func (a *Analyzer) extractDependenciesWithTypes(
 	}
 
 	return deps
+}
+
+// walkFuncBodyTypeUsage extracts type usage from a function body (composite literals,
+// call return types, type assertions, explicit var declarations) and reports each
+// referenced named type to addDep. Shared by extractDependenciesWithTypes (methods)
+// and freeFunctionReferenceCounts (package-level functions) so both sources of type usage
+// are detected identically.
+func walkFuncBodyTypeUsage(body *ast.BlockStmt, typesInfo *types.Info, addDep func(string)) {
+	ast.Inspect(body, func(bodyNode ast.Node) bool {
+		// Look for composite literals (e.g., MyType{}, &MyType{})
+		if compLit, ok := bodyNode.(*ast.CompositeLit); ok {
+			if typeInfo, hasType := typesInfo.Types[compLit]; hasType {
+				addDepFromType(typeInfo.Type, addDep)
+			}
+		}
+
+		// Look for function calls and check their return types
+		// AIDEV-NOTE: constructor-detection; catches markdown.NewStreamingParser() by return type
+		if callExpr, ok := bodyNode.(*ast.CallExpr); ok {
+			if typeInfo, hasType := typesInfo.Types[callExpr]; hasType {
+				addDepFromType(typeInfo.Type, addDep)
+			}
+		}
+
+		// Look for type assertions (e.g., x.(MyType))
+		if typeAssert, ok := bodyNode.(*ast.TypeAssertExpr); ok {
+			if typeInfo, hasType := typesInfo.Types[typeAssert.Type]; hasType {
+				addDepFromType(typeInfo.Type, addDep)
+			}
+		}
+
+		// Look for variable declarations with explicit types
+		if valSpec, ok := bodyNode.(*ast.ValueSpec); ok {
+			if valSpec.Type != nil {
+				if typeInfo, hasType := typesInfo.Types[valSpec.Type]; hasType {
+					addDepFromType(typeInfo.Type, addDep)
+				}
+			}
+		}
+
+		return true
+	})
+}
+
+// freeFunctionReferenceCounts walks package-level (non-method) function bodies across
+// every loaded package and counts references to known components. This is a usage
+// signal, not a graph in-degree: see AnalyzedComponent.FreeFunctionReferences for why
+// it is kept out of Metrics/Role.
+//
+// AIDEV-NOTE: free-function-deps; extractDependenciesWithTypes only walks methods
+// (isMethodOfComp above), so a component reachable only through a free function -
+// a plain constructor caller, a helper, anything without a receiver - previously got
+// no inbound edge and read as unused even when genuinely referenced. main packages
+// already get equivalent whole-package coverage via parser.extractMainComponent; this
+// mirrors that for every other package, but feeds metrics directly instead of
+// synthesizing a visible graph node, so it does not change diagram output.
+//
+// AIDEV-NOTE: exclude-self-construction, not same-package; a function that both lives
+// in a type's package AND declares that same type as one of its own return values is
+// that type's constructor (the `func NewX() *X { return &X{} }` shape) - referencing
+// the type inside its own body is definitional, not usage evidence. A blanket
+// same-package skip is too broad: it would also hide a different free function in the
+// same package that genuinely wires two components together (e.g.
+// `func BuildService() *Service { repo := NewRepo(); return &Service{repo: repo} }`),
+// since BuildService's own return type (*Service) doesn't match Repo, so Repo is not
+// self-referential from BuildService's point of view and must still be counted.
+//
+// AIDEV-NOTE: dual-package-map; mirrors the LoadedPackagesByPath -> LoadedPackages
+// fallback in extractDependenciesWithTypes (comp.PackagePath / comp.PackageName), since
+// a hand-built PackageTypeInfo (tests, other callers) may only populate one of the two
+// maps. Both maps are merged here, deduped by the *packages.Package itself so a package
+// present in both is only walked once, and each package's own PkgPath field (not the
+// map key) is used for identity - LoadedPackages is keyed by package name, not path.
+func (a *Analyzer) freeFunctionReferenceCounts(componentMap map[string]*AnalyzedComponent, pkgTypeInfo *parser.PackageTypeInfo) map[string]int {
+	counts := make(map[string]int)
+	seenPkg := make(map[*packages.Package]bool)
+
+	pkgs := make([]*packages.Package, 0, len(pkgTypeInfo.LoadedPackagesByPath)+len(pkgTypeInfo.LoadedPackages))
+	for _, pkg := range pkgTypeInfo.LoadedPackagesByPath {
+		pkgs = append(pkgs, pkg)
+	}
+	for _, pkg := range pkgTypeInfo.LoadedPackages {
+		pkgs = append(pkgs, pkg)
+	}
+
+	for _, pkg := range pkgs {
+		// main packages are already fully covered by parser.extractMainComponent,
+		// which walks every type expression in the package, not just func main().
+		if pkg.Name == "main" || seenPkg[pkg] {
+			continue
+		}
+		seenPkg[pkg] = true
+
+		if pkg.TypesInfo == nil {
+			continue
+		}
+
+		pkgPath := pkg.PkgPath
+
+		for _, syntax := range pkg.Syntax {
+			ast.Inspect(syntax, func(n ast.Node) bool {
+				funcDecl, ok := n.(*ast.FuncDecl)
+				if !ok || funcDecl.Recv != nil || funcDecl.Body == nil {
+					return true
+				}
+
+				// Collect the function's own declared return types, so its own
+				// constructor pattern can be excluded without excluding the whole package.
+				ownReturnTypes := make(map[string]bool)
+				if funcDecl.Type.Results != nil {
+					collect := func(typeName string) { ownReturnTypes[typeName] = true }
+					for _, field := range funcDecl.Type.Results.List {
+						if typeInfo, hasType := pkg.TypesInfo.Types[field.Type]; hasType {
+							addDepFromType(typeInfo.Type, collect)
+						}
+					}
+				}
+
+				addDep := func(typeName string) {
+					target := a.lookupComponent(typeName, componentMap)
+					if target == nil {
+						return
+					}
+					if target.Component.PackagePath == pkgPath && ownReturnTypes[typeName] {
+						return
+					}
+					counts[target.QualifiedName()]++
+				}
+
+				walkFuncBodyTypeUsage(funcDecl.Body, pkg.TypesInfo, addDep)
+				return true
+			})
+		}
+	}
+
+	return counts
 }
 
 // extractReceiverTypeName extracts type name from receiver (handles *T and T)
@@ -493,6 +615,18 @@ func extractReceiverTypeName(expr ast.Expr) string {
 // AIDEV-NOTE: stdlib-filter; filters out standard library types to avoid noise
 func addDepFromType(t types.Type, addDep func(string)) {
 	if t == nil {
+		return
+	}
+
+	// AIDEV-NOTE: multi-return-constructor; a call expression's type is a *types.Tuple
+	// when the callee returns more than one value (the idiomatic `(*Repo, error)` shape),
+	// so it must be unpacked before the *types.Named check below, or the whole call is
+	// silently dropped and constructors following Go's own error-return convention are
+	// invisible to dependency/usage detection.
+	if tuple, ok := t.(*types.Tuple); ok {
+		for v := range tuple.Variables() {
+			addDepFromType(v.Type(), addDep)
+		}
 		return
 	}
 
