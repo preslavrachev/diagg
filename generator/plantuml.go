@@ -343,7 +343,7 @@ func (g *PlantUMLGenerator) sortByConnectivity(components []analyzer.AnalyzedCom
 	}
 
 	// Simple bubble sort (fine for typical component counts)
-	for i := 0; i < len(sorted); i++ {
+	for i := range sorted {
 		for j := i + 1; j < len(sorted); j++ {
 			iPriority := rolePriority[sorted[i].Role]
 			jPriority := rolePriority[sorted[j].Role]

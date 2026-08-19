@@ -77,8 +77,19 @@ The tool supports multiple output formats via the generator interface, with two 
 Formats:
 1. **PlantUML C4** (default) - `diagram.puml` - static C4 component diagram
 2. **D3.js** - `diagram-d3.html` - interactive force-directed graph with package clustering
+3. **Excalidraw** - `diagram.excalidraw` - editable Excalidraw scene
+4. **JSON** (`--format json`, requires `-P`) - `packages.json` - machine-readable package graph (import path, root-level flag, component count, local imports, degree/role) for CI or scripting; see [cmd/diagg/json.go](cmd/diagg/json.go) and [analyzer/package_graph.go](analyzer/package_graph.go)
 
 See [generator/plantuml.go](generator/plantuml.go) and [generator/d3.go](generator/d3.go) for implementation details.
+
+## Structural Checks
+
+`diagg check` runs CI-friendly checks against the package graph, both built on [analyzer/package_graph.go](analyzer/package_graph.go):
+
+- `diagg check root-budget --max N --ignore ...` - fails if root-level product/domain packages (direct children of the module root) exceed the budget, after excluding infrastructure/support packages
+- `diagg check generic-names --deny ...` - flags packages whose declared name or import-path directory segment matches a generic-name deny list (e.g. `model`, `utils`, `manager`)
+
+Both exit non-zero on violation unless `--warn-only` is passed. See [cmd/diagg/check.go](cmd/diagg/check.go).
 
 ## Development Notes
 

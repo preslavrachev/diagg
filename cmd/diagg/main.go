@@ -34,7 +34,7 @@ func main() {
 				Name:    "format",
 				Aliases: []string{"f"},
 				Value:   "plantuml",
-				Usage:   "Output format: plantuml, d3, or excalidraw",
+				Usage:   "Output format: plantuml, d3, excalidraw, or json (json requires --package-links-only)",
 			},
 			&cli.BoolFlag{
 				Name:    "package-links-only",
@@ -45,6 +45,9 @@ func main() {
 				Name:  "debug",
 				Usage: "Print debug information about parsed packages and components",
 			},
+		},
+		Commands: []*cli.Command{
+			checkCommand(),
 		},
 		Action: runDiagg,
 	}
@@ -87,6 +90,12 @@ func runDiagg(c *cli.Context) error {
 	components, pkgTypeInfo, err := p.ParseDirectoryWithTypes(absPath)
 	if err != nil {
 		return fmt.Errorf("parsing directory: %w", err)
+	}
+
+	if handled, err := maybeWritePackageGraphJSON(
+		c.String("format"), c.Bool("package-links-only"), c.String("output"), components, pkgTypeInfo,
+	); handled {
+		return err
 	}
 
 	if len(components) == 0 {

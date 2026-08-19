@@ -234,6 +234,7 @@ type PackageTypeInfo struct {
 	LoadedPackages       map[string]*packages.Package // Package name -> package (legacy lookup)
 	LoadedPackagesByPath map[string]*packages.Package // Package path -> package
 	PackageImports       map[string][]string          // Package path -> imported package paths (project-local only)
+	ModulePath           string                       // Go module path (empty if not resolvable, e.g. GOPATH mode)
 }
 
 // ParseDirectoryWithTypes parses a directory using go/packages for full type information
@@ -245,7 +246,8 @@ func (p *Parser) ParseDirectoryWithTypes(root string) ([]Component, *PackageType
 			packages.NeedTypesInfo |
 			packages.NeedSyntax |
 			packages.NeedFiles |
-			packages.NeedImports,
+			packages.NeedImports |
+			packages.NeedModule,
 		Dir: root,
 	}
 
@@ -284,6 +286,11 @@ func (p *Parser) ParseDirectoryWithTypes(root string) ([]Component, *PackageType
 		// Store type info from first package
 		if pkgTypeInfo.TypeInfo == nil {
 			pkgTypeInfo.TypeInfo = pkg.TypesInfo
+		}
+
+		// AIDEV-NOTE: module-path; resolve once from any loaded package's module info
+		if pkgTypeInfo.ModulePath == "" && pkg.Module != nil {
+			pkgTypeInfo.ModulePath = pkg.Module.Path
 		}
 
 		// Extract components from each package
@@ -609,13 +616,13 @@ func (p *Parser) extractMainComponent(pkg *packages.Package) *Component {
 		case *types.Signature:
 			// Extract from parameters and results
 			if typ.Params() != nil {
-				for i := 0; i < typ.Params().Len(); i++ {
-					extractTypes(typ.Params().At(i).Type())
+				for v := range typ.Params().Variables() {
+					extractTypes(v.Type())
 				}
 			}
 			if typ.Results() != nil {
-				for i := 0; i < typ.Results().Len(); i++ {
-					extractTypes(typ.Results().At(i).Type())
+				for v := range typ.Results().Variables() {
+					extractTypes(v.Type())
 				}
 			}
 		}

@@ -3,6 +3,7 @@ package parser
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -52,13 +53,7 @@ func main() {
 		t.Fatal("expected import graph entry for test/cmd/server")
 	}
 
-	foundRouterImport := false
-	for _, imported := range imports {
-		if imported == "test/router" {
-			foundRouterImport = true
-			break
-		}
-	}
+	foundRouterImport := slices.Contains(imports, "test/router")
 	if !foundRouterImport {
 		t.Fatalf("expected test/cmd/server imports to include test/router, got: %v", imports)
 	}

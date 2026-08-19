@@ -3,6 +3,7 @@ package parser
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -259,21 +260,22 @@ func createMainPackage(t *testing.T, root, relPath string, imports []string) {
 		importBlock += ")\n\n"
 	}
 
-	mainGo := `package main
+	var mainGo strings.Builder
+	mainGo.WriteString(`package main
 
 ` + importBlock + `func main() {
 	// Reference imported types to ensure they appear in TypesInfo
-`
+`)
 	for _, imp := range imports {
 		pkgName := filepath.Base(imp)
 		typeName := capitalize(pkgName)
-		mainGo += "\t_ = " + pkgName + "." + typeName + "{}\n"
+		mainGo.WriteString("\t_ = " + pkgName + "." + typeName + "{}\n")
 	}
 
-	mainGo += `}
-`
+	mainGo.WriteString(`}
+`)
 
-	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(mainGo), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(mainGo.String()), 0644); err != nil {
 		t.Fatalf("write main.go in %s: %v", dir, err)
 	}
 }

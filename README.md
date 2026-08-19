@@ -35,8 +35,16 @@ diagg --format d3 -o diagram.html     # Generate interactive D3.js force-directe
 diagg --format excalidraw             # Generate diagram.excalidraw for Excalidraw
 diagg -P                              # Package-only mode from imports (A imports B => A -> B)
 diagg -P --format d3                  # Interactive package-only graph
+diagg -P --format json                # Machine-readable package graph (for CI/scripting)
 diagg --debug                         # Print discovered packages/components (debug output)
 ```
+
+**Structural checks (for CI / pre-commit):**
+```bash
+diagg check root-budget --max 5 --ignore cmd,config,database   # Fail if too many root-level packages
+diagg check generic-names --deny model,core,utils,manager      # Flag generic/low-information package names
+```
+Both checks exit non-zero on violation (or 0 with `--warn-only`), so they can gate CI without extra tooling.
 
 **Rendering the diagram:**
 ```bash

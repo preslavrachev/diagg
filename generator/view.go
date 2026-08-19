@@ -2,6 +2,7 @@ package generator
 
 import (
 	"fmt"
+	"maps"
 
 	"github.com/preslavrachev/diagg/analyzer"
 )
@@ -65,9 +66,7 @@ func WithPackageNamesByPath(names map[string]string) Option {
 		}
 
 		copied := make(map[string]string, len(names))
-		for path, name := range names {
-			copied[path] = name
-		}
+		maps.Copy(copied, names)
 		opts.packageNameByPath = copied
 	}
 }
